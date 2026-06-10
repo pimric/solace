@@ -4,35 +4,31 @@ const TILE_W = 28;
 const TILE_H = 14;
 const WORLD_SCALE = 0.25;
 
-// Centres des zones — Z resserré pour que les deux groupes soient proches visuellement
+// Pentagone iso : 5 zones équidistantes autour du centre (0,0)
 const GARDEN_ZONES = [
-  { code: 'PSE', cx: -100, cz: -35 },
-  { code: 'SDN', cx:  -80, cz: -45 },
-  { code: 'UKR', cx:  100, cz:  35 },
-  { code: 'MMR', cx:  140, cz:  25 },
-  { code: 'YEM', cx:  120, cz:  42 },
+  { code: 'PSE', cx: -57, cz: -57 },  // sommet
+  { code: 'UKR', cx:  10, cz: -45 },  // haut droite
+  { code: 'MMR', cx:  63, cz:  29 },  // bas droite
+  { code: 'YEM', cx:  29, cz:  63 },  // bas gauche
+  { code: 'SDN', cx: -45, cz:  10 },  // haut gauche
 ];
 
+// 5 zones + centre — bots empruntent les rayons du pentagone
 const PATH_NODES = [
-  { id: 0, x: -100, z: -35 },  // PSE
-  { id: 1, x:  -80, z: -45 },  // SDN
-  { id: 2, x:  -90, z: -40 },  // jonction Nord
-  { id: 3, x:    0, z:   0 },  // jonction centrale
-  { id: 4, x:  100, z:  35 },  // UKR
-  { id: 5, x:  140, z:  25 },  // MMR
-  { id: 6, x:  120, z:  42 },  // YEM
-  { id: 7, x:  120, z:  34 },  // jonction Sud
+  { id: 0, x: -57, z: -57 },  // PSE
+  { id: 1, x:  10, z: -45 },  // UKR
+  { id: 2, x:  63, z:  29 },  // MMR
+  { id: 3, x:  29, z:  63 },  // YEM
+  { id: 4, x: -45, z:  10 },  // SDN
+  { id: 5, x:   0, z:   0 },  // centre
 ];
-// Voisins de chaque nœud (bidirectionnel)
 const PATH_EDGES = {
-  0: [1, 2],
-  1: [0, 2],
-  2: [0, 1, 3],
-  3: [2, 7],
-  4: [5, 7],
-  5: [4, 6, 7],
-  6: [5, 7],
-  7: [3, 4, 5, 6],
+  0: [1, 4, 5],
+  1: [0, 2, 5],
+  2: [1, 3, 5],
+  3: [2, 4, 5],
+  4: [3, 0, 5],
+  5: [0, 1, 2, 3, 4],
 };
 
 class GardenScene extends Phaser.Scene {
@@ -257,24 +253,28 @@ class GardenScene extends Phaser.Scene {
       g.fill();
     }
 
-    // --- Chemins entre zones du même groupe ---
-    this._drawDottedPath(g, this._wp(-100, -35), this._wp(-80, -45),  0x2a3c2a, 0.55, 4);
-    this._drawDottedPath(g, this._wp(100,   35), this._wp(140,  25),  0x2a3c2a, 0.55, 4);
-    this._drawDottedPath(g, this._wp(140,   25), this._wp(120,  42),  0x2a3c2a, 0.55, 4);
-    // Chemin central Nord ↔ Sud
-    const northC = this._wp(-90, -40);
-    const southC = this._wp(120,  34);
-    this._drawDottedPath(g, northC, southC, 0x223322, 0.35, 7);
+    // --- Rayons du pentagone : chaque zone → centre ---
+    const ctr = this._wp(0, 0);
+    const zoneCoords = GARDEN_ZONES.map(z => ({ code: z.code, ...this._wp(z.cx, z.cz) }));
+    for (const z of zoneCoords) {
+      this._drawDottedPath(g, { x: z.x, y: z.y }, ctr, 0x2a3c2a, 0.40, 6);
+    }
+    // Périmètre du pentagone (zone adjacente)
+    const perimOrder = [0, 1, 2, 3, 4];
+    for (let i = 0; i < perimOrder.length; i++) {
+      const a = zoneCoords[perimOrder[i]];
+      const b = zoneCoords[perimOrder[(i + 1) % perimOrder.length]];
+      this._drawDottedPath(g, { x: a.x, y: a.y }, { x: b.x, y: b.y }, 0x1e2e1e, 0.25, 9);
+    }
 
     // --- Eau ---
-    const pse = this._wp(-100, -35);
-    const sdn = this._wp(-80,  -45);
-    this._drawPool(g, (pse.x + sdn.x) / 2, (pse.y + sdn.y) / 2, 28, 12);
-    const ukr = this._wp(100, 35);
-    const yem = this._wp(120, 42);
-    this._drawPool(g, (ukr.x + yem.x) / 2, (ukr.y + yem.y) / 2, 28, 12);
-    const mid = { x: (northC.x + southC.x) / 2, y: (northC.y + southC.y) / 2 };
-    this._drawPool(g, mid.x, mid.y, 50, 22);
+    // Bassin central
+    this._drawPool(g, ctr.x, ctr.y, 60, 26);
+    // Petites mares à mi-chemin sur deux rayons
+    const mPSE = this._wp(-28, -28);
+    this._drawPool(g, mPSE.x, mPSE.y, 22, 10);
+    const mMMR = this._wp(32, 15);
+    this._drawPool(g, mMMR.x, mMMR.y, 22, 10);
 
     // --- Délimitations (contour iso diamond) ---
     for (const z of GARDEN_ZONES) {
