@@ -8,6 +8,9 @@
     "status": "node scripts/status.js",
     "migrate": "node migrate.js",
     "migrate:check": "node scripts/migrate-check.js",
+    "seed": "node seed.js",
+    "import": "node importer.js",
+    "deploy": "bash scripts/deploy.sh",
     "lint": "eslint . --ext .js --ignore-pattern 'node_modules/**' --ignore-pattern 'public/phaser.min.js'",
     "test": "node scripts/migrate-check.js && node scripts/status.js"
   },
