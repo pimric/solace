@@ -10,13 +10,17 @@ Civilians → fleurs colorées. Combattants → végétation sombre sur les bord
 - **DB** : `solace.db` SQLite (~1000 plantes : Gaza, Soudan, Ukraine, Myanmar, Yémen)
 - **Logs** : `logger.js` (makeLogger), sortie dans `solace.log`
 
-## Démarrer le serveur
+## Déploiement live
+- **Site** : https://solace.databyric.fr (SSL Certbot, nginx proxy → :3002)
+- **pm2** : process `solace` online — `pm2 restart solace` pour redémarrer
+- **Port : 3002** — le 3000 est pris par hero.databyric.fr et ldvelh
+- Fichiers statiques (`public/`) servis directement — pas besoin de restart pm2
+
 ```bash
-PORT=3002 node server.js
-# ou via pm2 (pas encore configuré) :
-pm2 start server.js --name solace -- --port 3002
+pm2 restart solace        # redémarrer
+pm2 logs solace           # logs live
+PORT=3002 node server.js  # lancer manuellement (debug)
 ```
-**Port : 3002** — le 3000 est pris par hero.databyric.fr et ldvelh.
 
 ## Fichiers clés
 | Fichier | Rôle |
@@ -60,12 +64,15 @@ pm2 start server.js --name solace -- --port 3002
 - `BOT_WANDER_R` — rayon errance bots
 - `BOT_MIN_MS` / `BOT_MAX_MS` — durée trajet bot
 
-## Déploiement VPS (databyric.fr)
-- Domaine cible : `solace.databyric.fr`
-- Nginx + Certbot (Let's Encrypt) déjà en place pour les autres services
-- pm2 gère les process (`ldvelh`, `ldvelh-sandbox` déjà actifs)
-- Config nginx à créer (voir pattern des autres sites sur le VPS)
-- Fichiers statiques (`public/`) servis directement — pas besoin de restart pm2
+## Scripts ops (scripts/)
+| Script | Cron | Rôle |
+|---|---|---|
+| `scripts/backup-db-daily.sh` | `15 4 * * *` | Snapshot SQLite WAL-safe → kDrive `solace-db/`, retention 30j |
+| `scripts/backup-full-weekly.sh` | `30 5 * * 0` | tar.gz complet (sans node_modules/.git/logs) → kDrive `solace-full/` |
+| `scripts/watchdog.sh` | `*/30 * * * *` | Vérifie pm2, HTTP :3002, DB, disque — auto-restart + Telegram |
+
+Logs crons → `storage/logs/`
+Credentials Telegram lus depuis `/root/ricadmin/kpopdata/.env` (même VPS)
 
 ## Tests headless
 playwright-core disponible dans `/root/ricadmin/Hero/ldvelh/node_modules`
