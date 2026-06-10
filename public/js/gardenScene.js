@@ -68,7 +68,8 @@ class GardenScene extends Phaser.Scene {
     this.propRenderer = new PropRenderer(this);
     this.botRenderer = new BotRenderer(this);
 
-    this.botGraphics = this.add.graphics().setDepth(1);
+    this.botGraphics      = this.add.graphics().setDepth(1);
+    this.fountainGraphics = this.add.graphics().setDepth(0.8);
 
     this.connectWS();
     this.setupInput();
@@ -76,7 +77,7 @@ class GardenScene extends Phaser.Scene {
     this.scale.on('resize', () => { this._dirty = true; });
   }
 
-  update(time, delta) {
+  update(time, _delta) {
     if (this._dirty) {
       this._dirty = false;
       this._buildPlantTexture();
@@ -85,6 +86,7 @@ class GardenScene extends Phaser.Scene {
     this._updateZoneLabels();
     this.botRenderer.tick();
     this._drawBots();
+    this._drawAnimatedFountain(time);
     this._updateDayNight();
   }
 
@@ -310,8 +312,8 @@ class GardenScene extends Phaser.Scene {
       }
     }
 
-    // ── 3. FONTAINE CENTRALE ─────────────────────────────────────────────
-    this._drawFountain(g, ctr.x, ctr.y);
+    // ── 3. VASQUE (fond statique, jets animés dans _drawAnimatedFountain) ─
+    this._drawFountainBase(g, ctr.x, ctr.y);
 
     // ── 5. DÉCOR ──────────────────────────────────────────────────────────
     this._drawProps(g);
@@ -332,49 +334,92 @@ class GardenScene extends Phaser.Scene {
     }
   }
 
-  _drawFountain(g, x, y) {
-    // Vasque (bassin circulaire iso)
-    g.fillStyle(0x0e1a24, 0.9);
-    g.fillEllipse(x, y, 38, 17);
-    g.lineStyle(1.5, 0x2a4a5a, 0.7);
-    g.strokeEllipse(x, y, 38, 17);
-    // Rebord de pierre
-    g.lineStyle(2, 0x4a3e2e, 0.6);
-    g.strokeEllipse(x, y + 1, 40, 18);
-
-    // Eau — surface avec reflets légers
-    g.fillStyle(0x1a3848, 0.55);
-    g.fillEllipse(x, y - 1, 30, 13);
-    g.lineStyle(1, 0x6ab8d4, 0.18);
-    g.beginPath(); g.moveTo(x - 8, y - 2); g.lineTo(x + 4, y - 2); g.strokePath();
-    g.beginPath(); g.moveTo(x - 3, y + 1); g.lineTo(x + 6, y + 1); g.strokePath();
-
-    // Colonne centrale
+  // Partie statique dessinée dans la texture (vasque + colonne)
+  _drawFountainBase(g, x, y) {
+    // Vasque iso
+    g.fillStyle(0x0e1a24, 0.92);
+    g.fillEllipse(x, y, 40, 18);
+    g.lineStyle(2, 0x4a3e2e, 0.7);
+    g.strokeEllipse(x, y + 1, 42, 19);
+    g.lineStyle(1.5, 0x2a4a5a, 0.6);
+    g.strokeEllipse(x, y, 40, 18);
+    // Eau intérieure
+    g.fillStyle(0x152838, 0.7);
+    g.fillEllipse(x, y - 1, 32, 14);
+    // Colonne
     g.fillStyle(0x4a3e2e, 1);
-    g.fillEllipse(x, y - 1, 6, 3);
-    g.fillRect(x - 1.5, y - 8, 3, 7);
-    g.fillEllipse(x, y - 8, 5, 2.5);
+    g.fillEllipse(x, y,     6, 3);
+    g.fillRect(x - 1.5, y - 9, 3, 9);
+    g.fillEllipse(x, y - 9, 5, 2.5);
+  }
 
-    // Jets d'eau (4 arcs fins)
-    const jets = [
-      { ax: -6, ay: -3, bx: -11, by:  1 },
-      { ax:  6, ay: -3, bx:  11, by:  1 },
-      { ax: -2, ay: -4, bx:  -5, by:  3 },
-      { ax:  2, ay: -4, bx:   5, by:  3 },
+  // Partie animée dessinée chaque frame sur fountainGraphics
+  _drawAnimatedFountain(time) {
+    if (!this.plantImg || !this.fountainGraphics) return;
+    const g = this.fountainGraphics;
+    g.clear();
+
+    const { sx: x, sy: y } = this.worldToScreen(0, 0);
+    const t = time * 0.001; // secondes
+
+    // ── Ondulations concentriques ──────────────────────────────────────
+    // 3 cercles qui s'élargissent puis disparaissent (cycle 2.4s)
+    for (let i = 0; i < 3; i++) {
+      const phase = ((t + i * 0.8) % 2.4) / 2.4; // 0→1
+      const rw = 6 + phase * 26;
+      const rh = rw * 0.42;
+      const alpha = (1 - phase) * 0.35;
+      g.lineStyle(1, 0x5ab4cc, alpha);
+      g.strokeEllipse(x, y - 1, rw, rh);
+    }
+
+    // ── Jets d'eau (4 arcs qui pulsent en hauteur) ────────────────────
+    const jetDefs = [
+      { angle: -0.6, spread: 0.5 },
+      { angle:  0.6, spread: 0.5 },
+      { angle: -1.8, spread: 0.4 },
+      { angle:  1.8, spread: 0.4 },
     ];
-    g.lineStyle(1, 0x8ad4e8, 0.5);
-    for (const j of jets) {
+    jetDefs.forEach((j, i) => {
+      const pulse = 1 + Math.sin(t * 2.5 + i * 1.1) * 0.22;
+      const len   = (9 + j.spread * 4) * pulse;
+      const ox = x + Math.cos(j.angle) * 1.5;
+      const oy = y - 9;
+      const tx = ox + Math.cos(j.angle) * len;
+      const ty = oy + Math.sin(j.angle) * len * 0.45 + len * 0.3;
+      const alpha = 0.55 + Math.sin(t * 3 + i) * 0.15;
+      g.lineStyle(1.2, 0x8ad4e8, alpha);
       g.beginPath();
-      g.moveTo(x + j.ax * 0.2, y + j.ay + (-8));
-      g.lineTo(x + j.bx,       y + j.by  + (-1));
+      g.moveTo(ox, oy);
+      // arc via point de contrôle
+      const mx = (ox + tx) / 2 + Math.cos(j.angle) * len * 0.15;
+      const my = Math.min(oy, ty) - 3 * pulse;
+      g.lineTo(mx, my);
+      g.lineTo(tx, ty);
       g.strokePath();
-    }
-    // Éclaboussures (points autour du bassin)
-    g.fillStyle(0x5ab4cc, 0.3);
-    const splashes = [[-12,0],[12,1],[-9,4],[8,4],[0,-3],[0,5]];
-    for (const [sx, sy] of splashes) {
-      g.fillCircle(x + sx, y + sy - 1, 0.8);
-    }
+      // gouttelette au sommet
+      g.fillStyle(0x8ad4e8, alpha * 0.7);
+      g.fillCircle(mx, my, 0.9);
+    });
+
+    // ── Reflets animés sur la surface ────────────────────────────────
+    const shimmer = [
+      { ox: -9, oy: -1, l: 7 },
+      { ox:  3, oy:  2, l: 5 },
+      { ox: -4, oy:  1, l: 4 },
+    ];
+    shimmer.forEach((s, i) => {
+      const a = 0.12 + Math.sin(t * 4 + i * 1.7) * 0.08;
+      g.lineStyle(1, 0xb8e8f8, a);
+      g.beginPath();
+      g.moveTo(x + s.ox,         y + s.oy);
+      g.lineTo(x + s.ox + s.l,   y + s.oy);
+      g.strokePath();
+    });
+
+    // Opacité globale suit le jardin (nuit = plus discret)
+    const solarFactor = Math.max(0, Math.sin((new Date().getUTCHours() + new Date().getUTCMinutes()/60 - 6) / 12 * Math.PI));
+    g.setAlpha(this.griefPause ? 0 : 0.6 + solarFactor * 0.4);
   }
 
   // Ruban de chemin plat échantillonné le long d'un bezier cubique
