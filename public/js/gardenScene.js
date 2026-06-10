@@ -59,6 +59,11 @@ class GardenScene extends Phaser.Scene {
     this._zoom = 1.0;
     this._dragging = false;
     this._dragOrigin = { x: 0, y: 0 };
+    // Outils
+    this._activeTool = 'navigate';
+    this._candles = [];      // { wx, wz, born }
+    this._mouseX = 0;
+    this._mouseY = 0;
   }
 
   preload() {}
@@ -70,6 +75,8 @@ class GardenScene extends Phaser.Scene {
 
     this.botGraphics      = this.add.graphics().setDepth(1);
     this.fountainGraphics = this.add.graphics().setDepth(0.8);
+    this.candleGraphics   = this.add.graphics().setDepth(1.5);
+    this.cursorGraphics   = this.add.graphics().setDepth(10);
 
     this.connectWS();
     this.setupInput();
@@ -87,6 +94,8 @@ class GardenScene extends Phaser.Scene {
     this.botRenderer.tick();
     this._drawBots();
     this._drawAnimatedFountain(time);
+    this._drawCandles(time);
+    this._drawCursor(time);
     this._updateDayNight();
   }
 
@@ -601,7 +610,7 @@ class GardenScene extends Phaser.Scene {
               toY: plant.pos_z + (Math.random() - 0.5) * 4,
               toNodeId: nearestNode,
               startTime: Date.now(),
-              duration: 7000 + Math.random() * 5000,
+              duration: 18000 + Math.random() * 12000,
             });
           }
         }
@@ -634,7 +643,7 @@ class GardenScene extends Phaser.Scene {
       toX: node.x, toY: node.z,
       toNodeId: nextId,
       startTime: Date.now(),
-      duration: 5000 + Math.random() * 8000,
+      duration: 16000 + Math.random() * 14000,
     };
   }
 
@@ -705,12 +714,121 @@ class GardenScene extends Phaser.Scene {
     }
   }
 
+  _placeCandle(px, py) {
+    // Convertit position écran → coords monde approximatives
+    if (!this.plantImg) return;
+    const vs = this._viewScale || 1;
+    const tx = (px - this._imgX) / vs + this.plantImg.width  / 2 + this._texMinX;
+    const ty = (py - this._imgY) / vs + this.plantImg.height / 2 + this._texMinY;
+    // iso inverse : ix=(x-z)*s*TW/2, iy=(x+z)*s*TH/2
+    const s = WORLD_SCALE;
+    const xmz = tx / (s * TILE_W / 2);
+    const xpz = ty / (s * TILE_H / 2);
+    const wx = (xmz + xpz) / 2;
+    const wz = (xpz - xmz) / 2;
+    this._candles.push({ wx, wz, born: Date.now() });
+  }
+
+  _drawCandles(time) {
+    if (!this.candleGraphics || !this.plantImg) return;
+    const g = this.candleGraphics;
+    g.clear();
+    const now = Date.now();
+    const LIFE = 90000; // 90s
+    this._candles = this._candles.filter(c => now - c.born < LIFE);
+    for (const c of this._candles) {
+      const age = (now - c.born) / LIFE;       // 0→1
+      const fade = 1 - age;
+      const { sx, sy } = this.worldToScreen(c.wx, c.wz);
+      // Halo au sol
+      g.fillStyle(0xe8a040, 0.08 * fade);
+      g.fillEllipse(sx, sy, 28 * fade, 12 * fade);
+      // Cire (corps bougie)
+      g.fillStyle(0xf0e8d0, 0.9 * fade);
+      g.fillRect(sx - 2, sy - 9, 4, 8);
+      // Mèche
+      g.fillStyle(0x2a1a08, fade);
+      g.fillRect(sx - 0.5, sy - 12, 1, 3);
+      // Flamme — 3 couches qui flickent
+      const flick = Math.sin(time * 0.012 + c.wx) * 0.3;
+      g.fillStyle(0xfff0a0, 0.85 * fade);
+      g.fillEllipse(sx + flick * 0.5, sy - 14, 4, 5);
+      g.fillStyle(0xffa040, 0.7 * fade);
+      g.fillEllipse(sx + flick,       sy - 13, 2.5, 3.5);
+      g.fillStyle(0xffffff, 0.4 * fade);
+      g.fillEllipse(sx + flick * 0.3, sy - 14.5, 1.2, 1.8);
+      // Lueur dorée
+      g.fillStyle(0xe8900a, 0.12 * fade);
+      g.fillEllipse(sx, sy - 13, 14, 10);
+    }
+  }
+
+  _drawCursor(time) {
+    if (!this.cursorGraphics) return;
+    const g = this.cursorGraphics;
+    g.clear();
+    const x = this._mouseX;
+    const y = this._mouseY;
+    if (x === 0 && y === 0) return;
+
+    if (this._activeTool === 'navigate') {
+      // Croix fine + cercle
+      g.lineStyle(1, 0xc8b89a, 0.6);
+      g.beginPath(); g.moveTo(x - 6, y); g.lineTo(x + 6, y); g.strokePath();
+      g.beginPath(); g.moveTo(x, y - 6); g.lineTo(x, y + 6); g.strokePath();
+      g.lineStyle(1, 0xc8b89a, 0.3);
+      g.strokeCircle(x, y, 4);
+
+    } else if (this._activeTool === 'water') {
+      const pulse = 1 + Math.sin(time * 0.006) * 0.15;
+      // Corps arrosoir
+      g.fillStyle(0x7ab8d4, 0.9);
+      g.fillRect(x - 8, y - 5, 10, 7);
+      // Bec
+      g.lineStyle(1.5, 0x7ab8d4, 0.9);
+      g.beginPath(); g.moveTo(x + 2, y - 2); g.lineTo(x + 10, y - 7); g.strokePath();
+      // Anse
+      g.beginPath(); g.moveTo(x - 8, y - 5); g.lineTo(x - 10, y - 9); g.lineTo(x - 4, y - 9); g.strokePath();
+      // Gouttes
+      g.fillStyle(0x7ab8d4, 0.7 * pulse);
+      g.fillCircle(x + 11, y - 6,  1.2);
+      g.fillCircle(x + 13, y - 4,  0.9);
+      g.fillCircle(x + 12, y - 2,  0.8);
+
+    } else if (this._activeTool === 'candle') {
+      const flick = Math.sin(time * 0.014) * 1.2;
+      // Cire
+      g.fillStyle(0xf0e8d0, 0.9);
+      g.fillRect(x - 3, y, 6, 10);
+      // Flamme
+      g.fillStyle(0xfff0a0, 0.9);
+      g.fillEllipse(x + flick * 0.4, y - 4, 5, 7);
+      g.fillStyle(0xffa040, 0.8);
+      g.fillEllipse(x + flick * 0.6, y - 3, 3, 5);
+      g.fillStyle(0xffffff, 0.5);
+      g.fillEllipse(x + flick * 0.2, y - 4, 1.5, 2.5);
+      // Halo
+      g.fillStyle(0xe8900a, 0.1);
+      g.fillEllipse(x, y - 2, 18, 14);
+    }
+  }
+
   setupInput() {
-    // Pan drag
     this.input.on('pointerdown', (ptr) => {
+      if (this._activeTool === 'water') {
+        const plant = this._plantAt(ptr.x, ptr.y);
+        if (plant) { this._waterByVisitor(plant.id); this._flashPlant(plant.id); }
+        return;
+      }
+      if (this._activeTool === 'candle') {
+        this._placeCandle(ptr.x, ptr.y);
+        return;
+      }
+      // navigate : pan
       this._dragging = true;
       this._dragOrigin = { x: ptr.x - this._panX, y: ptr.y - this._panY };
     });
+
     this.input.on('pointerup', () => { this._dragging = false; });
     this.input.on('pointerout', () => {
       this._dragging = false;
@@ -718,7 +836,10 @@ class GardenScene extends Phaser.Scene {
     });
 
     this.input.on('pointermove', (ptr) => {
-      if (this._dragging) {
+      this._mouseX = ptr.x;
+      this._mouseY = ptr.y;
+
+      if (this._dragging && this._activeTool === 'navigate') {
         this._panX = ptr.x - this._dragOrigin.x;
         this._panY = ptr.y - this._dragOrigin.y;
         return;
@@ -728,23 +849,30 @@ class GardenScene extends Phaser.Scene {
       if (hitId !== this.hoverPlantId) {
         this.hoverPlantId = hitId;
         clearTimeout(this.hoverTimer);
-        if (hitId) {
+        // arrosage auto uniquement en mode navigate
+        if (hitId && this._activeTool === 'navigate') {
           this.hoverTimer = setTimeout(() => this._waterByVisitor(hitId), this.WATER_HOVER_MS);
         }
       }
       if (window.showPlantTip) window.showPlantTip(plant || null, ptr.x, ptr.y);
     });
 
-    // Zoom molette
     this.input.on('wheel', (_ptr, _dx, _dy, deltaY) => {
       const factor = deltaY > 0 ? 0.9 : 1.1;
       this._zoom = Math.max(0.4, Math.min(4.0, this._zoom * factor));
     });
 
-    // Double-clic reset vue
     this.input.on('pointerdblclick', () => {
-      this._panX = 0; this._panY = 0; this._zoom = 1.0;
+      if (this._activeTool === 'navigate') {
+        this._panX = 0; this._panY = 0; this._zoom = 1.0;
+      }
     });
+
+    // Exposition de setTool au HTML
+    window.setGardenTool = (tool) => {
+      this._activeTool = tool;
+      if (window.onToolChanged) window.onToolChanged(tool);
+    };
   }
 
   _plantAt(px, py) {
