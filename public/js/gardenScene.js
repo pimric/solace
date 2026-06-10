@@ -256,15 +256,33 @@ class GardenScene extends Phaser.Scene {
 
   _drawGardenInfra(g) {
     const ZONE_R = 22;
+    const ctr = this._wp(0, 0);
+    const zoneCoords = GARDEN_ZONES.map(z => ({ code: z.code, ...this._wp(z.cx, z.cz) }));
 
-    // --- Sol terreux : base sombre + speckles de terre ---
+    // ── 1. CHEMINS (avant le sol pour passer dessous) ──────────────────────
+    for (let i = 0; i < GARDEN_ZONES.length; i++) {
+      const z = zoneCoords[i];
+      // Wobble unique par zone basé sur index
+      const wb = 12 + (i * 7) % 14;
+      const side = (i % 2 === 0) ? 1 : -1;
+      this._drawPathRibbon(g, { x: z.x, y: z.y }, ctr, 6, wb * side);
+    }
+    // Périmètre (chemin de ronde, plus fin)
+    const perimOrder = [0, 1, 2, 3, 4];
+    for (let i = 0; i < perimOrder.length; i++) {
+      const a = zoneCoords[perimOrder[i]];
+      const b = zoneCoords[perimOrder[(i+1) % 5]];
+      const wb = 8 + (i * 5) % 10;
+      this._drawPathRibbon(g, { x: a.x, y: a.y }, { x: b.x, y: b.y }, 4, wb);
+    }
+
+    // ── 2. SOL TERREUX (recouvre les extrémités des chemins) ──────────────
     const EARTH_SPECK = [0x2a1e0e, 0x3a2a14, 0x1e1608, 0x4a3520, 0x251a0a];
     for (const z of GARDEN_ZONES) {
       const c = this._wp(z.cx, z.cz);
       const rx = ZONE_R * WORLD_SCALE * TILE_W;
       const ry = ZONE_R * WORLD_SCALE * TILE_H;
 
-      // Base : losange iso brun foncé
       g.fillStyle(0x1c1208, 1);
       g.beginPath();
       g.moveTo(c.x,      c.y - ry);
@@ -274,7 +292,6 @@ class GardenScene extends Phaser.Scene {
       g.closePath();
       g.fill();
 
-      // Texture : petits grains de terre (points semi-aléatoires déterministes)
       let seed = (z.cx * 137 + z.cz * 31) & 0xffff;
       const rng = () => { seed = (seed * 1664525 + 1013904223) & 0xffff; return seed / 0xffff; };
       for (let i = 0; i < 90; i++) {
@@ -286,50 +303,31 @@ class GardenScene extends Phaser.Scene {
         g.fillStyle(col, 0.55 + rng() * 0.35);
         g.fillCircle(sx, sy, 0.8 + rng() * 1.2);
       }
-      // Quelques mottes plus larges
       for (let i = 0; i < 12; i++) {
         const r  = rng() * 0.7;
         const th = rng() * Math.PI * 2;
-        const sx = c.x + Math.cos(th) * r * rx;
-        const sy = c.y + Math.sin(th) * r * ry;
         g.fillStyle(0x3a2810, 0.25 + rng() * 0.2);
-        g.fillEllipse(sx, sy, 4 + rng() * 4, 2 + rng() * 2);
+        g.fillEllipse(c.x + Math.cos(th) * r * rx, c.y + Math.sin(th) * r * ry, 4 + rng() * 4, 2 + rng() * 2);
       }
     }
 
-    // --- Rivière sinueuse + pont ---
+    // ── 3. RIVIÈRE + PONT ─────────────────────────────────────────────────
     this._drawRiver(g);
 
-    // --- Chemins courbes : chaque zone → centre ---
-    const ctr = this._wp(0, 0);
-    const zoneCoords = GARDEN_ZONES.map(z => ({ code: z.code, ...this._wp(z.cx, z.cz) }));
-    for (const z of zoneCoords) {
-      this._drawCurvedPath(g, { x: z.x, y: z.y }, ctr, 0xb8a070, 0.55);
-    }
-    // Périmètre du pentagone (chemins de ronde, moins larges)
-    const perimOrder = [0, 1, 2, 3, 4];
-    for (let i = 0; i < perimOrder.length; i++) {
-      const a = zoneCoords[perimOrder[i]];
-      const b = zoneCoords[perimOrder[(i + 1) % perimOrder.length]];
-      this._drawCurvedPath(g, { x: a.x, y: a.y }, { x: b.x, y: b.y }, 0x8a7050, 0.35, 10);
-    }
-
-    // --- Eau ---
+    // ── 4. EAU ────────────────────────────────────────────────────────────
     this._drawPool(g, ctr.x, ctr.y, 60, 26);
-    const mPSE = this._wp(-28, -28);
-    this._drawPool(g, mPSE.x, mPSE.y, 22, 10);
-    const mMMR = this._wp(32, 15);
-    this._drawPool(g, mMMR.x, mMMR.y, 22, 10);
+    this._drawPool(g, this._wp(-28, -28).x, this._wp(-28, -28).y, 22, 10);
+    this._drawPool(g, this._wp(32, 15).x,   this._wp(32, 15).y,   22, 10);
 
-    // --- Objets de décor ---
+    // ── 5. DÉCOR ──────────────────────────────────────────────────────────
     this._drawProps(g);
 
-    // --- Contour iso diamond ---
+    // ── 6. CONTOUR ZONES ──────────────────────────────────────────────────
     for (const z of GARDEN_ZONES) {
       const c = this._wp(z.cx, z.cz);
       const rx = ZONE_R * WORLD_SCALE * TILE_W;
       const ry = ZONE_R * WORLD_SCALE * TILE_H;
-      g.lineStyle(1, 0x4a3820, 0.5);
+      g.lineStyle(1, 0x4a3820, 0.45);
       g.beginPath();
       g.moveTo(c.x,      c.y - ry);
       g.lineTo(c.x + rx, c.y);
@@ -338,7 +336,6 @@ class GardenScene extends Phaser.Scene {
       g.closePath();
       g.strokePath();
     }
-
   }
 
   _drawPool(g, x, y, rw, rh) {
@@ -354,49 +351,85 @@ class GardenScene extends Phaser.Scene {
     g.strokePath();
   }
 
-  // Chemin courbe naturel : bezier quadratique avec déviation perpendiculaire
-  _drawCurvedPath(g, from, to, color, alpha, wobble = 18) {
+  // Ruban de chemin plat échantillonné le long d'un bezier cubique
+  _drawPathRibbon(g, from, to, width, wobble = 14) {
+    const STEPS = 28;
     const dx = to.x - from.x;
     const dy = to.y - from.y;
     const len = Math.sqrt(dx * dx + dy * dy);
-    const px = -dy / len; const py = dx / len; // perpendiculaire
-    // Deux points de contrôle intermédiaires pour S-curve naturelle
-    const t1 = 0.33; const t2 = 0.66;
-    const w1 = wobble * (0.5 + Math.sin(from.x * 0.3) * 0.5);
-    const w2 = -wobble * (0.5 + Math.cos(to.x * 0.3) * 0.5);
-    const c1 = { x: from.x + dx * t1 + px * w1, y: from.y + dy * t1 + py * w1 };
-    const c2 = { x: from.x + dx * t2 + px * w2, y: from.y + dy * t2 + py * w2 };
+    const nx = -dy / len; const ny = dx / len;
 
-    // Fond de chemin (terre tassée, plus large)
-    g.lineStyle(3, 0x2a1e0e, alpha * 0.9);
-    g.beginPath();
-    g.moveTo(from.x, from.y);
-    g.lineTo(c1.x, c1.y); g.lineTo(c2.x, c2.y); g.lineTo(to.x, to.y);
-    g.strokePath();
-    // Sable dessus (plus clair, plus fin)
-    g.lineStyle(1.5, color, alpha);
-    g.beginPath();
-    g.moveTo(from.x, from.y);
-    g.lineTo(c1.x, c1.y); g.lineTo(c2.x, c2.y); g.lineTo(to.x, to.y);
-    g.strokePath();
-    // Quelques cailloux le long du chemin
-    const steps = Math.floor(len / 12);
-    let seed = (from.x * 17 + to.y * 31) & 0xffff;
-    const rng = () => { seed = (seed * 1664525 + 1013904223) & 0xffff; return seed / 0xffff; };
-    for (let i = 1; i < steps; i++) {
-      const t = i / steps;
-      const bx = this._cubicBezier(from.x, c1.x, c2.x, to.x, t);
-      const by = this._cubicBezier(from.y, c1.y, c2.y, to.y, t);
-      if (rng() > 0.65) {
-        g.fillStyle(0x3a2e1a, 0.4 + rng() * 0.3);
-        g.fillCircle(bx + (rng() - 0.5) * 4, by + (rng() - 0.5) * 2, 0.8 + rng() * 1.0);
-      }
+    // Points de contrôle : S-curve avec amplitude modérée
+    const c1 = { x: from.x + dx * 0.3 + nx * wobble,        y: from.y + dy * 0.3 + ny * wobble };
+    const c2 = { x: from.x + dx * 0.7 + nx * wobble * -0.6, y: from.y + dy * 0.7 + ny * wobble * -0.6 };
+
+    // Échantillonnage
+    const pts = [];
+    for (let i = 0; i <= STEPS; i++) {
+      const t = i / STEPS;
+      const u = 1 - t;
+      pts.push({
+        x: u*u*u*from.x + 3*u*u*t*c1.x + 3*u*t*t*c2.x + t*t*t*to.x,
+        y: u*u*u*from.y + 3*u*u*t*c1.y + 3*u*t*t*c2.y + t*t*t*to.y,
+      });
     }
-  }
 
-  _cubicBezier(p0, p1, p2, p3, t) {
-    const u = 1 - t;
-    return u*u*u*p0 + 3*u*u*t*p1 + 3*u*t*t*p2 + t*t*t*p3;
+    // Calcul des normales à chaque point
+    const left = [], right = [];
+    for (let i = 0; i <= STEPS; i++) {
+      let tx, ty;
+      if (i === 0)     { tx = pts[1].x - pts[0].x;   ty = pts[1].y - pts[0].y; }
+      else if (i === STEPS) { tx = pts[i].x - pts[i-1].x; ty = pts[i].y - pts[i-1].y; }
+      else             { tx = pts[i+1].x - pts[i-1].x; ty = pts[i+1].y - pts[i-1].y; }
+      const tl = Math.sqrt(tx*tx + ty*ty) || 1;
+      const pnx = -ty / tl; const pny = tx / tl;
+      const hw = width * 0.5;
+      left.push({ x: pts[i].x + pnx * hw, y: pts[i].y + pny * hw });
+      right.push({ x: pts[i].x - pnx * hw, y: pts[i].y - pny * hw });
+    }
+
+    // Couche de fond (terre compactée, bords sombres)
+    g.fillStyle(0x140e06, 0.75);
+    g.beginPath();
+    g.moveTo(left[0].x, left[0].y);
+    for (const p of left) g.lineTo(p.x, p.y);
+    for (let i = right.length - 1; i >= 0; i--) g.lineTo(right[i].x, right[i].y);
+    g.closePath();
+    g.fill();
+
+    // Surface sablonneuse (plus étroite, centrée)
+    const innerW = width * 0.55;
+    const iLeft = [], iRight = [];
+    for (let i = 0; i <= STEPS; i++) {
+      let tx, ty;
+      if (i === 0)     { tx = pts[1].x - pts[0].x;   ty = pts[1].y - pts[0].y; }
+      else if (i === STEPS) { tx = pts[i].x - pts[i-1].x; ty = pts[i].y - pts[i-1].y; }
+      else             { tx = pts[i+1].x - pts[i-1].x; ty = pts[i+1].y - pts[i-1].y; }
+      const tl = Math.sqrt(tx*tx + ty*ty) || 1;
+      const pnx = -ty / tl; const pny = tx / tl;
+      const hw = innerW * 0.5;
+      iLeft.push({ x: pts[i].x + pnx * hw, y: pts[i].y + pny * hw });
+      iRight.push({ x: pts[i].x - pnx * hw, y: pts[i].y - pny * hw });
+    }
+    g.fillStyle(0xb89860, 0.5);
+    g.beginPath();
+    g.moveTo(iLeft[0].x, iLeft[0].y);
+    for (const p of iLeft) g.lineTo(p.x, p.y);
+    for (let i = iRight.length - 1; i >= 0; i--) g.lineTo(iRight[i].x, iRight[i].y);
+    g.closePath();
+    g.fill();
+
+    // Cailloux déterministes
+    let seed = ((from.x * 17 + to.y * 31) * 997) & 0xffff;
+    const rng = () => { seed = (seed * 1664525 + 1013904223) & 0xffff; return seed / 0xffff; };
+    for (let i = 2; i < STEPS - 2; i++) {
+      if (rng() > 0.55) continue;
+      const side = rng() > 0.5 ? 1 : -1;
+      const ox = pts[i].x + (iLeft[i].x - pts[i].x) * side * (0.6 + rng() * 0.9);
+      const oy = pts[i].y + (iLeft[i].y - pts[i].y) * side * (0.6 + rng() * 0.9);
+      g.fillStyle(0x4a3820, 0.35 + rng() * 0.3);
+      g.fillCircle(ox, oy, 0.6 + rng() * 1.0);
+    }
   }
 
   _drawRiver(g) {
