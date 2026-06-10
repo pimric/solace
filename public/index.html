@@ -47,6 +47,19 @@
     max-width: 210px;
   }
   #plant-tip.show { opacity: 1; }
+
+  /* Hint cérémonie */
+  #ceremony-hint {
+    position: fixed; pointer-events: none; z-index: 25;
+    opacity: 0; transition: opacity 0.2s;
+    font-family: 'Courier New', monospace;
+    font-size: 9px; letter-spacing: 2px;
+    color: #c8b89a; text-transform: uppercase;
+    background: rgba(8,8,16,0.7);
+    padding: 3px 8px;
+    border-left: 2px solid rgba(200,184,154,0.4);
+  }
+  #ceremony-hint.show { opacity: 1; }
   #plant-tip .tip-country { font-size: 11px; color: #e8d8b8; letter-spacing: 2px; margin-bottom: 2px; }
   #plant-tip .tip-conflict { font-size: 9px; opacity: 0.6; margin-bottom: 3px; }
   #plant-tip .tip-type   { opacity: 0.75; }
@@ -173,6 +186,8 @@
     <span class="water-bar"><span class="water-fill" id="tip-wfill"></span></span>
   </div>
 </div>
+
+<div id="ceremony-hint"></div>
 
 <!-- Toolbar outils -->
 <div id="toolbar">
@@ -301,6 +316,19 @@
       if (window.setGardenTool) window.setGardenTool(tool);
     });
   });
+  // Hint cérémonie
+  const ceremonyHint = document.getElementById('ceremony-hint');
+  const ZONE_COLORS = { PSE:'#d8d0c0', UKR:'#f0d040', MMR:'#e8a060', YEM:'#60d890', SDN:'#b8a888' };
+  window.showCeremonyHint = function(label, zone, px, py) {
+    ceremonyHint.textContent = label;
+    ceremonyHint.style.color = ZONE_COLORS[zone] || '#c8b89a';
+    ceremonyHint.style.borderLeftColor = ZONE_COLORS[zone] || '#c8b89a';
+    ceremonyHint.style.left = (px + 20) + 'px';
+    ceremonyHint.style.top  = (py - 28) + 'px';
+    ceremonyHint.classList.add('show');
+  };
+  window.hideCeremonyHint = function() { ceremonyHint.classList.remove('show'); };
+
   window.onToolChanged = function(tool) {
     toolBtns.forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
   };

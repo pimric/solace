@@ -714,19 +714,41 @@ class GardenScene extends Phaser.Scene {
     }
   }
 
-  _placeCandle(px, py) {
-    // Convertit position écran → coords monde approximatives
-    if (!this.plantImg) return;
+  // Cérémonies culturelles par zone
+  static get CEREMONIES() {
+    return {
+      PSE: { label: 'BOUGIE BLANCHE', color: 0xf8f4ee, glow: 0xd0c8b8 }, // deuil islamique
+      UKR: { label: 'FLEUR',         color: 0xf0d040, glow: 0x4070d0 }, // tournesol
+      MMR: { label: 'ENCENS',        color: 0xe8a060, glow: 0x906030 }, // bouddhiste
+      YEM: { label: 'LUMIÈRE VERTE', color: 0x60d890, glow: 0x30a060 }, // symbolique
+      SDN: { label: 'PIERRE',        color: 0xb8a888, glow: 0x907858 }, // deuil africain
+    };
+  }
+
+  _screenToWorld(px, py) {
+    if (!this.plantImg) return { wx: 0, wz: 0 };
     const vs = this._viewScale || 1;
     const tx = (px - this._imgX) / vs + this.plantImg.width  / 2 + this._texMinX;
     const ty = (py - this._imgY) / vs + this.plantImg.height / 2 + this._texMinY;
-    // iso inverse : ix=(x-z)*s*TW/2, iy=(x+z)*s*TH/2
     const s = WORLD_SCALE;
     const xmz = tx / (s * TILE_W / 2);
     const xpz = ty / (s * TILE_H / 2);
-    const wx = (xmz + xpz) / 2;
-    const wz = (xpz - xmz) / 2;
-    this._candles.push({ wx, wz, born: Date.now() });
+    return { wx: (xmz + xpz) / 2, wz: (xpz - xmz) / 2 };
+  }
+
+  _nearestZone(wx, wz) {
+    let best = null, bestD = Infinity;
+    for (const z of GARDEN_ZONES) {
+      const d = (z.cx - wx) ** 2 + (z.cz - wz) ** 2;
+      if (d < bestD) { bestD = d; best = z.code; }
+    }
+    return best;
+  }
+
+  _placeCandle(px, py) {
+    const { wx, wz } = this._screenToWorld(px, py);
+    const zone = this._nearestZone(wx, wz);
+    this._candles.push({ wx, wz, zone, born: Date.now() });
   }
 
   _drawCandles(time) {
@@ -734,32 +756,114 @@ class GardenScene extends Phaser.Scene {
     const g = this.candleGraphics;
     g.clear();
     const now = Date.now();
-    const LIFE = 90000; // 90s
+    const LIFE = 90000;
     this._candles = this._candles.filter(c => now - c.born < LIFE);
     for (const c of this._candles) {
-      const age = (now - c.born) / LIFE;       // 0→1
-      const fade = 1 - age;
+      const fade = 1 - (now - c.born) / LIFE;
       const { sx, sy } = this.worldToScreen(c.wx, c.wz);
-      // Halo au sol
-      g.fillStyle(0xe8a040, 0.08 * fade);
-      g.fillEllipse(sx, sy, 28 * fade, 12 * fade);
-      // Cire (corps bougie)
-      g.fillStyle(0xf0e8d0, 0.9 * fade);
-      g.fillRect(sx - 2, sy - 9, 4, 8);
-      // Mèche
+      this._drawOffering(g, sx, sy, c.zone, fade, time, c.wx);
+    }
+  }
+
+  _drawOffering(g, x, y, zone, fade, time, seed) {
+    const cer = GardenScene.CEREMONIES[zone] || GardenScene.CEREMONIES.PSE;
+    const flick = Math.sin(time * 0.013 + seed) * 1.0;
+
+    if (zone === 'PSE') {
+      // Bougie blanche — deuil islamique, calme
+      g.fillStyle(cer.glow, 0.1 * fade);
+      g.fillEllipse(x, y, 22, 9);
+      g.fillStyle(0xf8f4ee, 0.95 * fade);
+      g.fillRect(x - 2, y - 10, 4, 9);
+      g.lineStyle(0.5, 0xd8d0c0, 0.5 * fade);
+      g.strokeRect(x - 2, y - 10, 4, 9);
       g.fillStyle(0x2a1a08, fade);
-      g.fillRect(sx - 0.5, sy - 12, 1, 3);
-      // Flamme — 3 couches qui flickent
-      const flick = Math.sin(time * 0.012 + c.wx) * 0.3;
-      g.fillStyle(0xfff0a0, 0.85 * fade);
-      g.fillEllipse(sx + flick * 0.5, sy - 14, 4, 5);
-      g.fillStyle(0xffa040, 0.7 * fade);
-      g.fillEllipse(sx + flick,       sy - 13, 2.5, 3.5);
-      g.fillStyle(0xffffff, 0.4 * fade);
-      g.fillEllipse(sx + flick * 0.3, sy - 14.5, 1.2, 1.8);
-      // Lueur dorée
-      g.fillStyle(0xe8900a, 0.12 * fade);
-      g.fillEllipse(sx, sy - 13, 14, 10);
+      g.fillRect(x - 0.5, y - 13, 1, 3);
+      g.fillStyle(0xf8f8f8, 0.9 * fade);
+      g.fillEllipse(x + flick * 0.3, y - 15, 4, 6);
+      g.fillStyle(0xe0d0b0, 0.7 * fade);
+      g.fillEllipse(x + flick * 0.5, y - 14, 2.5, 4);
+      g.fillStyle(0xffffff, 0.5 * fade);
+      g.fillEllipse(x, y - 15.5, 1.2, 2);
+
+    } else if (zone === 'UKR') {
+      // Tournesol — pétales jaunes + cœur bleu
+      g.fillStyle(cer.glow, 0.12 * fade);
+      g.fillEllipse(x, y, 24, 10);
+      const petals = 8;
+      for (let i = 0; i < petals; i++) {
+        const a = (i / petals) * Math.PI * 2 + time * 0.0005;
+        const px2 = x + Math.cos(a) * 7;
+        const py2 = y - 6 + Math.sin(a) * 4;
+        g.fillStyle(0xf0d040, (0.8 + Math.sin(a + time * 0.003) * 0.15) * fade);
+        g.fillEllipse(px2, py2, 4, 3);
+      }
+      g.fillStyle(0x3060c0, 0.9 * fade);
+      g.fillCircle(x, y - 6, 3.5);
+      g.fillStyle(0x1040a0, 0.7 * fade);
+      g.fillCircle(x, y - 6, 2);
+      // Tige
+      g.lineStyle(1.5, 0x407030, 0.8 * fade);
+      g.beginPath(); g.moveTo(x, y - 2); g.lineTo(x, y); g.strokePath();
+
+    } else if (zone === 'MMR') {
+      // Bâton d'encens bouddhiste — fumée montante
+      g.fillStyle(cer.glow, 0.1 * fade);
+      g.fillEllipse(x, y, 18, 8);
+      g.lineStyle(1.5, 0xc87030, 0.9 * fade);
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x, y - 18); g.strokePath();
+      g.fillStyle(0xe89050, fade);
+      g.fillCircle(x, y - 18, 1.5);
+      // Fumée (3 volutes)
+      for (let i = 0; i < 4; i++) {
+        const progress = ((time * 0.0008 + i * 0.25) % 1);
+        const py2 = y - 18 - progress * 20;
+        const px2 = x + Math.sin(progress * Math.PI * 2 + i) * 4;
+        const a = (1 - progress) * 0.4 * fade;
+        g.fillStyle(0xd8c0a0, a);
+        g.fillCircle(px2, py2, 1.5 + progress * 2);
+      }
+
+    } else if (zone === 'YEM') {
+      // Lanterne verte — lumière symbolique
+      g.fillStyle(cer.glow, 0.15 * fade);
+      g.fillEllipse(x, y, 30, 13);
+      // Corps lanterne
+      g.fillStyle(0x205530, 0.9 * fade);
+      g.fillRect(x - 4, y - 13, 8, 10);
+      g.lineStyle(1, 0x60d890, 0.7 * fade);
+      g.strokeRect(x - 4, y - 13, 8, 10);
+      // Fenêtres lumineuses
+      const glow2 = 0.5 + Math.sin(time * 0.008 + seed) * 0.2;
+      g.fillStyle(0x80f0b0, glow2 * fade);
+      g.fillRect(x - 2.5, y - 11, 2, 3);
+      g.fillRect(x + 0.5,  y - 11, 2, 3);
+      // Anse
+      g.lineStyle(1, 0x60d890, 0.6 * fade);
+      g.beginPath(); g.moveTo(x, y - 13); g.lineTo(x, y - 16); g.strokePath();
+      g.fillStyle(0x60d890, 0.8 * fade);
+      g.fillCircle(x, y - 16, 1);
+
+    } else if (zone === 'SDN') {
+      // Pile de pierres — deuil africain, cairn
+      g.fillStyle(cer.glow, 0.08 * fade);
+      g.fillEllipse(x, y, 20, 8);
+      const stones = [
+        { ox: -3, oy:  0, w: 7, h: 3.5 },
+        { ox: -2, oy: -3, w: 5.5, h: 3 },
+        { ox: -1, oy: -6, w: 4, h: 2.5 },
+        { ox:  0, oy: -8.5, w: 2.5, h: 2 },
+      ];
+      stones.forEach((s, i) => {
+        const shade = 0x706050 + i * 0x101008;
+        g.fillStyle(shade, (0.85 + i * 0.04) * fade);
+        g.fillEllipse(x + s.ox, y + s.oy, s.w, s.h);
+        g.lineStyle(0.5, 0x504030, 0.3 * fade);
+        g.strokeEllipse(x + s.ox, y + s.oy, s.w, s.h);
+      });
+      // Petite marque gravée sur la pierre du dessus
+      g.lineStyle(0.8, 0x302010, 0.5 * fade);
+      g.beginPath(); g.moveTo(x - 1, y - 8.5); g.lineTo(x + 1, y - 8.5); g.strokePath();
     }
   }
 
@@ -796,21 +900,20 @@ class GardenScene extends Phaser.Scene {
       g.fillCircle(x + 12, y - 2,  0.8);
 
     } else if (this._activeTool === 'candle') {
-      const flick = Math.sin(time * 0.014) * 1.2;
-      // Cire
-      g.fillStyle(0xf0e8d0, 0.9);
-      g.fillRect(x - 3, y, 6, 10);
-      // Flamme
-      g.fillStyle(0xfff0a0, 0.9);
-      g.fillEllipse(x + flick * 0.4, y - 4, 5, 7);
-      g.fillStyle(0xffa040, 0.8);
-      g.fillEllipse(x + flick * 0.6, y - 3, 3, 5);
-      g.fillStyle(0xffffff, 0.5);
-      g.fillEllipse(x + flick * 0.2, y - 4, 1.5, 2.5);
-      // Halo
-      g.fillStyle(0xe8900a, 0.1);
-      g.fillEllipse(x, y - 2, 18, 14);
+      // Curseur = aperçu de la cérémonie de la zone sous la souris
+      const { wx, wz } = this._screenToWorld(x, y);
+      const zone = this._nearestZone(wx, wz) || 'PSE';
+      const cer = GardenScene.CEREMONIES[zone];
+      // Petit aperçu de l'offrande (scale réduit)
+      this._drawOffering(g, x, y - 8, zone, 0.85, time, wx);
+      // Label zone
+      if (window.showCeremonyHint) window.showCeremonyHint(cer.label, zone, x, y);
     }
+  }
+
+  // Réinitialise hint quand on quitte le mode
+  _hideCeremonyHint() {
+    if (window.hideCeremonyHint) window.hideCeremonyHint();
   }
 
   setupInput() {
@@ -871,6 +974,7 @@ class GardenScene extends Phaser.Scene {
     // Exposition de setTool au HTML
     window.setGardenTool = (tool) => {
       this._activeTool = tool;
+      if (tool !== 'candle') this._hideCeremonyHint();
       if (window.onToolChanged) window.onToolChanged(tool);
     };
   }
