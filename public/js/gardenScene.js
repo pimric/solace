@@ -310,10 +310,8 @@ class GardenScene extends Phaser.Scene {
       }
     }
 
-    // ── 3. EAU ────────────────────────────────────────────────────────────
-    this._drawPool(g, ctr.x, ctr.y, 60, 26);
-    this._drawPool(g, this._wp(-28, -28).x, this._wp(-28, -28).y, 22, 10);
-    this._drawPool(g, this._wp(32, 15).x,   this._wp(32, 15).y,   22, 10);
+    // ── 3. FONTAINE CENTRALE ─────────────────────────────────────────────
+    this._drawFountain(g, ctr.x, ctr.y);
 
     // ── 5. DÉCOR ──────────────────────────────────────────────────────────
     this._drawProps(g);
@@ -334,17 +332,49 @@ class GardenScene extends Phaser.Scene {
     }
   }
 
-  _drawPool(g, x, y, rw, rh) {
-    g.fillStyle(0x1a2c3a, 0.75);
-    g.fillEllipse(x, y, rw, rh);
-    g.lineStyle(1, 0x2a4c5a, 0.5);
-    g.strokeEllipse(x, y, rw, rh);
-    // reflet
-    g.lineStyle(1, 0xffffff, 0.12);
-    g.beginPath();
-    g.moveTo(x - rw * 0.25, y - 1);
-    g.lineTo(x + rw * 0.15, y - 1);
-    g.strokePath();
+  _drawFountain(g, x, y) {
+    // Vasque (bassin circulaire iso)
+    g.fillStyle(0x0e1a24, 0.9);
+    g.fillEllipse(x, y, 38, 17);
+    g.lineStyle(1.5, 0x2a4a5a, 0.7);
+    g.strokeEllipse(x, y, 38, 17);
+    // Rebord de pierre
+    g.lineStyle(2, 0x4a3e2e, 0.6);
+    g.strokeEllipse(x, y + 1, 40, 18);
+
+    // Eau — surface avec reflets légers
+    g.fillStyle(0x1a3848, 0.55);
+    g.fillEllipse(x, y - 1, 30, 13);
+    g.lineStyle(1, 0x6ab8d4, 0.18);
+    g.beginPath(); g.moveTo(x - 8, y - 2); g.lineTo(x + 4, y - 2); g.strokePath();
+    g.beginPath(); g.moveTo(x - 3, y + 1); g.lineTo(x + 6, y + 1); g.strokePath();
+
+    // Colonne centrale
+    g.fillStyle(0x4a3e2e, 1);
+    g.fillEllipse(x, y - 1, 6, 3);
+    g.fillRect(x - 1.5, y - 8, 3, 7);
+    g.fillEllipse(x, y - 8, 5, 2.5);
+
+    // Jets d'eau (4 arcs fins)
+    const jets = [
+      { ax: -6, ay: -3, bx: -11, by:  1 },
+      { ax:  6, ay: -3, bx:  11, by:  1 },
+      { ax: -2, ay: -4, bx:  -5, by:  3 },
+      { ax:  2, ay: -4, bx:   5, by:  3 },
+    ];
+    g.lineStyle(1, 0x8ad4e8, 0.5);
+    for (const j of jets) {
+      g.beginPath();
+      g.moveTo(x + j.ax * 0.2, y + j.ay + (-8));
+      g.lineTo(x + j.bx,       y + j.by  + (-1));
+      g.strokePath();
+    }
+    // Éclaboussures (points autour du bassin)
+    g.fillStyle(0x5ab4cc, 0.3);
+    const splashes = [[-12,0],[12,1],[-9,4],[8,4],[0,-3],[0,5]];
+    for (const [sx, sy] of splashes) {
+      g.fillCircle(x + sx, y + sy - 1, 0.8);
+    }
   }
 
   // Ruban de chemin plat échantillonné le long d'un bezier cubique
