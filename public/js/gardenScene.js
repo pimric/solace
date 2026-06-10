@@ -76,6 +76,8 @@ class GardenScene extends Phaser.Scene {
       this._buildPlantTexture();
     }
     this._positionPlantLayer();
+    this._updateZoneLabels();
+    this.botRenderer.tick();
     this._drawBots();
     this._updateDayNight();
   }
@@ -84,38 +86,48 @@ class GardenScene extends Phaser.Scene {
     const now = new Date();
     const h = now.getUTCHours() + now.getUTCMinutes() / 60;
 
-    // Palettes clés : [r, g, b] pour chaque phase
+    // Palettes clés : [r, g, b] pour chaque phase — couleurs horizon (bas) et zénith (haut)
     const PALETTE = {
-      midnight: [2,   4,   8  ],
-      dawn:     [18,  10,  22 ],
-      sunrise:  [28,  16,  20 ],
-      day:      [8,   12,  20 ],
-      noon:     [10,  15,  24 ],
-      dusk:     [24,  12,  8  ],
-      sunset:   [18,  8,   6  ],
-      night:    [4,   4,   10 ],
+      midnight: { top: [2,3,8],     bot: [4,5,14]   },
+      dawn:     { top: [15,8,25],   bot: [40,18,20]  },
+      sunrise:  { top: [40,20,15],  bot: [80,45,20]  },
+      day:      { top: [18,30,65],  bot: [50,70,110] },
+      noon:     { top: [25,45,90],  bot: [65,95,145] },
+      dusk:     { top: [50,22,8],   bot: [90,50,15]  },
+      sunset:   { top: [30,10,5],   bot: [70,28,10]  },
+      night:    { top: [3,4,12],    bot: [6,7,18]    },
     };
 
-    // Interpolation linéaire entre deux couleurs
-    const lerp = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
-    const toHex = rgb => (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
+    const lerp  = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+    const lerpP = (a, b, t) => ({ top: lerp(a.top, b.top, t), bot: lerp(a.bot, b.bot, t) });
+    const toN   = rgb => (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
 
-    let color;
-    if      (h < 1)  color = lerp(PALETTE.night,    PALETTE.midnight, h / 1);
-    else if (h < 5)  color = PALETTE.midnight;
-    else if (h < 6)  color = lerp(PALETTE.midnight,  PALETTE.dawn,    (h - 5));
-    else if (h < 7)  color = lerp(PALETTE.dawn,      PALETTE.sunrise, (h - 6));
-    else if (h < 9)  color = lerp(PALETTE.sunrise,   PALETTE.day,     (h - 7) / 2);
-    else if (h < 13) color = lerp(PALETTE.day,        PALETTE.noon,   (h - 9) / 4);
-    else if (h < 17) color = lerp(PALETTE.noon,       PALETTE.day,    (h - 13) / 4);
-    else if (h < 18) color = lerp(PALETTE.day,        PALETTE.dusk,   (h - 17));
-    else if (h < 19) color = lerp(PALETTE.dusk,       PALETTE.sunset, (h - 18));
-    else if (h < 21) color = lerp(PALETTE.sunset,     PALETTE.night,  (h - 19) / 2);
-    else             color = PALETTE.night;
+    let pal;
+    if      (h < 1)  pal = lerpP(PALETTE.night,    PALETTE.midnight, h);
+    else if (h < 5)  pal = PALETTE.midnight;
+    else if (h < 6)  pal = lerpP(PALETTE.midnight,  PALETTE.dawn,    h - 5);
+    else if (h < 7)  pal = lerpP(PALETTE.dawn,      PALETTE.sunrise, h - 6);
+    else if (h < 9)  pal = lerpP(PALETTE.sunrise,   PALETTE.day,     (h - 7) / 2);
+    else if (h < 13) pal = lerpP(PALETTE.day,        PALETTE.noon,   (h - 9) / 4);
+    else if (h < 17) pal = lerpP(PALETTE.noon,       PALETTE.day,    (h - 13) / 4);
+    else if (h < 18) pal = lerpP(PALETTE.day,        PALETTE.dusk,   h - 17);
+    else if (h < 19) pal = lerpP(PALETTE.dusk,       PALETTE.sunset, h - 18);
+    else if (h < 21) pal = lerpP(PALETTE.sunset,     PALETTE.night,  (h - 19) / 2);
+    else             pal = PALETTE.night;
 
-    this.cameras.main.setBackgroundColor(toHex(color));
+    // Dégradé vertical plein écran (zénith → horizon)
+    const W = this.cameras.main.width;
+    const H = this.cameras.main.height;
+    const tC = toN(pal.top);
+    const bC = toN(pal.bot);
+    if (!this._skyGfx) {
+      this._skyGfx = this.add.graphics().setDepth(-1);
+    }
+    this._skyGfx.clear();
+    this._skyGfx.fillGradientStyle(tC, tC, bC, bC, 1);
+    this._skyGfx.fillRect(0, 0, W, H);
 
-    // Opacité globale du jardin : légèrement réduite la nuit
+    // Opacité globale du jardin
     const solarFactor = Math.max(0, Math.sin((h - 6) / 12 * Math.PI));
     const alpha = 0.55 + solarFactor * 0.45;
     if (this.plantImg) this.plantImg.setAlpha(this.griefPause ? 0.25 : alpha);
@@ -223,6 +235,7 @@ class GardenScene extends Phaser.Scene {
         this._texVer++;
 
         this.plantImg = this.add.image(0, 0, key).setOrigin(0.5, 0.5).setDepth(0);
+        if (!this._zoneLabels) this._createZoneLabels();
         console.log('[solace] texture rebuilt ver=' + this._texVer + ' plants=' + this.viewPlants.length + ' size=' + texW + 'x' + texH);
     } catch(e) {
         console.error('[solace] _buildPlantTexture failed', e);
@@ -236,14 +249,17 @@ class GardenScene extends Phaser.Scene {
   }
 
   _drawGardenInfra(g) {
-    const ZONE_R = 22;  // rayon de la zone en unités monde (plantes à r=5..15)
+    const ZONE_R = 22;
 
-    // --- Sol sous chaque zone ---
+    // --- Sol terreux : base sombre + speckles de terre ---
+    const EARTH_SPECK = [0x2a1e0e, 0x3a2a14, 0x1e1608, 0x4a3520, 0x251a0a];
     for (const z of GARDEN_ZONES) {
       const c = this._wp(z.cx, z.cz);
       const rx = ZONE_R * WORLD_SCALE * TILE_W;
       const ry = ZONE_R * WORLD_SCALE * TILE_H;
-      g.fillStyle(0x141410, 1);
+
+      // Base : losange iso brun foncé
+      g.fillStyle(0x1c1208, 1);
       g.beginPath();
       g.moveTo(c.x,      c.y - ry);
       g.lineTo(c.x + rx, c.y);
@@ -251,6 +267,28 @@ class GardenScene extends Phaser.Scene {
       g.lineTo(c.x - rx, c.y);
       g.closePath();
       g.fill();
+
+      // Texture : petits grains de terre (points semi-aléatoires déterministes)
+      let seed = (z.cx * 137 + z.cz * 31) & 0xffff;
+      const rng = () => { seed = (seed * 1664525 + 1013904223) & 0xffff; return seed / 0xffff; };
+      for (let i = 0; i < 90; i++) {
+        const r  = rng() * 0.85;
+        const th = rng() * Math.PI * 2;
+        const sx = c.x + Math.cos(th) * r * rx;
+        const sy = c.y + Math.sin(th) * r * ry;
+        const col = EARTH_SPECK[Math.floor(rng() * EARTH_SPECK.length)];
+        g.fillStyle(col, 0.55 + rng() * 0.35);
+        g.fillCircle(sx, sy, 0.8 + rng() * 1.2);
+      }
+      // Quelques mottes plus larges
+      for (let i = 0; i < 12; i++) {
+        const r  = rng() * 0.7;
+        const th = rng() * Math.PI * 2;
+        const sx = c.x + Math.cos(th) * r * rx;
+        const sy = c.y + Math.sin(th) * r * ry;
+        g.fillStyle(0x3a2810, 0.25 + rng() * 0.2);
+        g.fillEllipse(sx, sy, 4 + rng() * 4, 2 + rng() * 2);
+      }
     }
 
     // --- Rayons du pentagone : chaque zone → centre ---
@@ -259,7 +297,6 @@ class GardenScene extends Phaser.Scene {
     for (const z of zoneCoords) {
       this._drawDottedPath(g, { x: z.x, y: z.y }, ctr, 0x2a3c2a, 0.40, 6);
     }
-    // Périmètre du pentagone (zone adjacente)
     const perimOrder = [0, 1, 2, 3, 4];
     for (let i = 0; i < perimOrder.length; i++) {
       const a = zoneCoords[perimOrder[i]];
@@ -268,20 +305,18 @@ class GardenScene extends Phaser.Scene {
     }
 
     // --- Eau ---
-    // Bassin central
     this._drawPool(g, ctr.x, ctr.y, 60, 26);
-    // Petites mares à mi-chemin sur deux rayons
     const mPSE = this._wp(-28, -28);
     this._drawPool(g, mPSE.x, mPSE.y, 22, 10);
     const mMMR = this._wp(32, 15);
     this._drawPool(g, mMMR.x, mMMR.y, 22, 10);
 
-    // --- Délimitations (contour iso diamond) ---
+    // --- Contour iso diamond ---
     for (const z of GARDEN_ZONES) {
       const c = this._wp(z.cx, z.cz);
       const rx = ZONE_R * WORLD_SCALE * TILE_W;
       const ry = ZONE_R * WORLD_SCALE * TILE_H;
-      g.lineStyle(1, 0x3a5c3a, 0.45);
+      g.lineStyle(1, 0x4a3820, 0.5);
       g.beginPath();
       g.moveTo(c.x,      c.y - ry);
       g.lineTo(c.x + rx, c.y);
@@ -290,6 +325,7 @@ class GardenScene extends Phaser.Scene {
       g.closePath();
       g.strokePath();
     }
+
   }
 
   _drawPool(g, x, y, rw, rh) {
@@ -458,6 +494,31 @@ class GardenScene extends Phaser.Scene {
     const bots = this._getAnimatedBots();
     for (const b of bots) {
       this.botRenderer.draw(this.botGraphics, b);
+    }
+  }
+
+  _createZoneLabels() {
+    this._zoneLabels = true;
+    const NAMES = { PSE:'GAZA', UKR:'UKRAINE', MMR:'MYANMAR', YEM:'YÉMEN', SDN:'SOUDAN' };
+    const style = {
+      fontFamily: 'Courier New', fontSize: '8px',
+      color: '#c8b090', stroke: '#000000', strokeThickness: 2,
+    };
+    this._zoneLabelObjs = GARDEN_ZONES.map(z => {
+      const t = this.add.text(0, 0, NAMES[z.code] || z.code, style)
+        .setOrigin(0.5, 1).setDepth(2).setAlpha(0.75);
+      return { wx: z.cx, wz: z.cz, obj: t };
+    });
+  }
+
+  _updateZoneLabels() {
+    if (!this._zoneLabelObjs || !this.plantImg) return;
+    const ZONE_R = 22;
+    for (const lbl of this._zoneLabelObjs) {
+      // Place le label au sommet nord du losange iso de la zone
+      const { sx, sy } = this.worldToScreen(lbl.wx, lbl.wz - ZONE_R);
+      lbl.obj.x = sx;
+      lbl.obj.y = sy - 4;
     }
   }
 
