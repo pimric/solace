@@ -32,28 +32,32 @@ async function computeDeltas(db) {
   // Paix active ?
   const peaceActive = await checkPeaceNews(countryCodes);
 
+  // Facteur solaire : courbe sinus, pic à 12h UTC, nul de 18h à 6h
+  const now = new Date();
+  const hourFloat = now.getUTCHours() + now.getUTCMinutes() / 60;
+  const solarFactor = Math.max(0, Math.sin((hourFloat - 6) / 12 * Math.PI));
+
+  // Rosée matinale : légère recharge entre 4h30 et 7h UTC
+  const isDew = hourFloat >= 4.5 && hourFloat < 7;
+
   const deltas = [];
   for (const p of plants) {
-    const w = weatherMap[p.country_code] || { rain: 0, sun: 1 };
+    const w = weatherMap[p.country_code] || { rain: 0, sun: 0.5 };
     let delta = 0;
-
-    // Cycle jour/nuit (UTC) : nuit = 20h-6h, pas d'évaporation solaire
-    const hour = new Date().getUTCHours();
-    const isNight = hour < 6 || hour >= 20;
 
     // Pluie : +0 à +10
     delta += w.rain * 10;
 
-    // Soleil : modificateur évaporation, nul la nuit
-    if (!isNight) delta += (1 - w.sun) * 2 - 1;
+    // Évaporation solaire (nuages réduisent l'évap) — calibrée pour ~1 mois
+    delta -= solarFactor * w.sun * 0.003;
+
+    // Rosée matinale : +0.001 par tick
+    if (isDew) delta += 0.001;
 
     // Paix : +5 bonus
     if (peaceActive[p.country_code]) delta += 5;
 
-    // Perte naturelle (transpiration) — calibrée pour ~3 mois sans visite
-    delta -= isNight ? 0.0002 : 0.0005;
-
-    deltas.push({ plant_id: p.id, delta: Math.round(delta * 10) / 10 });
+    deltas.push({ plant_id: p.id, delta: Math.round(delta * 100000) / 100000 });
   }
 
   return deltas;

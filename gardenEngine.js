@@ -88,9 +88,9 @@ async function updatePlantHealth() {
       UPDATE plants SET
         health = CASE
           WHEN fatalities >= 1000 THEN MAX(health, 20)
-          WHEN water_level < 10   THEN MAX(0, health - 0.001)
-          WHEN water_level < 30   THEN MAX(0, health - 0.0005)
-          WHEN water_level > 70   THEN MIN(100, health + 0.1)
+          WHEN water_level < 10   THEN MAX(0, health - 0.005)
+          WHEN water_level < 30   THEN MAX(0, health - 0.002)
+          WHEN water_level > 70   THEN MIN(100, health + 0.05)
           ELSE health
         END,
         is_alive = CASE

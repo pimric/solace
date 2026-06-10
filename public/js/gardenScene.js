@@ -81,6 +81,49 @@ class GardenScene extends Phaser.Scene {
     }
     this._positionPlantLayer();
     this._drawBots();
+    this._updateDayNight();
+  }
+
+  _updateDayNight() {
+    const now = new Date();
+    const h = now.getUTCHours() + now.getUTCMinutes() / 60;
+
+    // Palettes clés : [r, g, b] pour chaque phase
+    const PALETTE = {
+      midnight: [2,   4,   8  ],
+      dawn:     [18,  10,  22 ],
+      sunrise:  [28,  16,  20 ],
+      day:      [8,   12,  20 ],
+      noon:     [10,  15,  24 ],
+      dusk:     [24,  12,  8  ],
+      sunset:   [18,  8,   6  ],
+      night:    [4,   4,   10 ],
+    };
+
+    // Interpolation linéaire entre deux couleurs
+    const lerp = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+    const toHex = rgb => (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
+
+    let color;
+    if      (h < 1)  color = lerp(PALETTE.night,    PALETTE.midnight, h / 1);
+    else if (h < 5)  color = PALETTE.midnight;
+    else if (h < 6)  color = lerp(PALETTE.midnight,  PALETTE.dawn,    (h - 5));
+    else if (h < 7)  color = lerp(PALETTE.dawn,      PALETTE.sunrise, (h - 6));
+    else if (h < 9)  color = lerp(PALETTE.sunrise,   PALETTE.day,     (h - 7) / 2);
+    else if (h < 13) color = lerp(PALETTE.day,        PALETTE.noon,   (h - 9) / 4);
+    else if (h < 17) color = lerp(PALETTE.noon,       PALETTE.day,    (h - 13) / 4);
+    else if (h < 18) color = lerp(PALETTE.day,        PALETTE.dusk,   (h - 17));
+    else if (h < 19) color = lerp(PALETTE.dusk,       PALETTE.sunset, (h - 18));
+    else if (h < 21) color = lerp(PALETTE.sunset,     PALETTE.night,  (h - 19) / 2);
+    else             color = PALETTE.night;
+
+    this.cameras.main.setBackgroundColor(toHex(color));
+
+    // Opacité globale du jardin : légèrement réduite la nuit
+    const solarFactor = Math.max(0, Math.sin((h - 6) / 12 * Math.PI));
+    const alpha = 0.55 + solarFactor * 0.45;
+    if (this.plantImg) this.plantImg.setAlpha(this.griefPause ? 0.25 : alpha);
+    this.botGraphics.setAlpha(this.griefPause ? 0 : alpha);
   }
 
   _applyViewSubset() {
@@ -287,7 +330,6 @@ class GardenScene extends Phaser.Scene {
     // setOrigin(0.5,0.5) → placer le centre de la texture au centre écran
     this.plantImg.x = cx;
     this.plantImg.y = cy;
-    this.plantImg.setAlpha(this.griefPause ? 0.25 : 1.0);
   }
 
   _initBotAnim(bots) {
