@@ -736,18 +736,40 @@ class GardenScene extends Phaser.Scene {
     return { wx: (xmz + xpz) / 2, wz: (xpz - xmz) / 2 };
   }
 
-  _nearestZone(wx, wz) {
-    let best = null, bestD = Infinity;
+  // Retourne le code de zone si le point est à l'intérieur du rayon, null sinon
+  _zoneAt(wx, wz) {
+    const ZONE_R = 22;
     for (const z of GARDEN_ZONES) {
-      const d = (z.cx - wx) ** 2 + (z.cz - wz) ** 2;
-      if (d < bestD) { bestD = d; best = z.code; }
+      const d2 = (z.cx - wx) ** 2 + (z.cz - wz) ** 2;
+      if (d2 < ZONE_R * ZONE_R) return z.code;
     }
-    return best;
+    return null;
+  }
+
+  _plantsInZone(zoneCode) {
+    const z = GARDEN_ZONES.find(g => g.code === zoneCode);
+    if (!z) return [];
+    const ZONE_R = 22;
+    return this.plants.filter(p => p.is_alive &&
+      (z.cx - p.pos_x) ** 2 + (z.cz - p.pos_z) ** 2 < ZONE_R * ZONE_R);
+  }
+
+  _offeringsInZone(zoneCode) {
+    return this._candles.filter(c => c.zone === zoneCode).length;
   }
 
   _placeCandle(px, py) {
     const { wx, wz } = this._screenToWorld(px, py);
-    const zone = this._nearestZone(wx, wz);
+    const zone = this._zoneAt(wx, wz);
+    if (!zone) {
+      if (window.showCeremonyHint) window.showCeremonyHint('HORS ZONE', null, px, py);
+      return;
+    }
+    const maxOfferings = this._plantsInZone(zone).length;
+    if (this._offeringsInZone(zone) >= maxOfferings) {
+      if (window.showCeremonyHint) window.showCeremonyHint('ZONE PLEINE', zone, px, py);
+      return;
+    }
     this._candles.push({ wx, wz, zone, born: Date.now() });
   }
 
@@ -900,14 +922,28 @@ class GardenScene extends Phaser.Scene {
       g.fillCircle(x + 12, y - 2,  0.8);
 
     } else if (this._activeTool === 'candle') {
-      // Curseur = aperçu de la cérémonie de la zone sous la souris
       const { wx, wz } = this._screenToWorld(x, y);
-      const zone = this._nearestZone(wx, wz) || 'PSE';
-      const cer = GardenScene.CEREMONIES[zone];
-      // Petit aperçu de l'offrande (scale réduit)
-      this._drawOffering(g, x, y - 8, zone, 0.85, time, wx);
-      // Label zone
-      if (window.showCeremonyHint) window.showCeremonyHint(cer.label, zone, x, y);
+      const zone = this._zoneAt(wx, wz);
+
+      if (!zone) {
+        // Hors zone : curseur interdit
+        g.lineStyle(1.5, 0x886655, 0.7);
+        g.strokeCircle(x, y, 7);
+        g.beginPath(); g.moveTo(x - 5, y - 5); g.lineTo(x + 5, y + 5); g.strokePath();
+        if (window.hideCeremonyHint) window.hideCeremonyHint();
+      } else {
+        const cer = GardenScene.CEREMONIES[zone];
+        // Vérifier si zone pleine
+        const full = this._offeringsInZone(zone) >= this._plantsInZone(zone).length;
+        if (full) {
+          g.lineStyle(1.5, 0x886655, 0.7);
+          g.strokeCircle(x, y, 7);
+          if (window.showCeremonyHint) window.showCeremonyHint('ZONE PLEINE', zone, x, y);
+        } else {
+          this._drawOffering(g, x, y - 8, zone, 0.85, time, wx);
+          if (window.showCeremonyHint) window.showCeremonyHint(cer.label, zone, x, y);
+        }
+      }
     }
   }
 
