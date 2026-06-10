@@ -260,20 +260,19 @@ class GardenScene extends Phaser.Scene {
     const zoneCoords = GARDEN_ZONES.map(z => ({ code: z.code, ...this._wp(z.cx, z.cz) }));
 
     // ── 1. CHEMINS (avant le sol pour passer dessous) ──────────────────────
+    // Wobbles forts et alternés pour des S-curves bien visibles
+    const ZONE_WOBBLES = [42, -38, 50, -44, 36];
     for (let i = 0; i < GARDEN_ZONES.length; i++) {
       const z = zoneCoords[i];
-      // Wobble unique par zone basé sur index
-      const wb = 12 + (i * 7) % 14;
-      const side = (i % 2 === 0) ? 1 : -1;
-      this._drawPathRibbon(g, { x: z.x, y: z.y }, ctr, 6, wb * side);
+      this._drawPathRibbon(g, { x: z.x, y: z.y }, ctr, 6, ZONE_WOBBLES[i]);
     }
-    // Périmètre (chemin de ronde, plus fin)
+    // Périmètre (chemin de ronde, plus fin, courbures propres)
     const perimOrder = [0, 1, 2, 3, 4];
+    const PERIM_WOBBLES = [28, -32, 25, -30, 22];
     for (let i = 0; i < perimOrder.length; i++) {
       const a = zoneCoords[perimOrder[i]];
       const b = zoneCoords[perimOrder[(i+1) % 5]];
-      const wb = 8 + (i * 5) % 10;
-      this._drawPathRibbon(g, { x: a.x, y: a.y }, { x: b.x, y: b.y }, 4, wb);
+      this._drawPathRibbon(g, { x: a.x, y: a.y }, { x: b.x, y: b.y }, 4, PERIM_WOBBLES[i]);
     }
 
     // ── 2. SOL TERREUX (recouvre les extrémités des chemins) ──────────────
@@ -311,10 +310,7 @@ class GardenScene extends Phaser.Scene {
       }
     }
 
-    // ── 3. RIVIÈRE + PONT ─────────────────────────────────────────────────
-    this._drawRiver(g);
-
-    // ── 4. EAU ────────────────────────────────────────────────────────────
+    // ── 3. EAU ────────────────────────────────────────────────────────────
     this._drawPool(g, ctr.x, ctr.y, 60, 26);
     this._drawPool(g, this._wp(-28, -28).x, this._wp(-28, -28).y, 22, 10);
     this._drawPool(g, this._wp(32, 15).x,   this._wp(32, 15).y,   22, 10);
@@ -359,9 +355,9 @@ class GardenScene extends Phaser.Scene {
     const len = Math.sqrt(dx * dx + dy * dy);
     const nx = -dy / len; const ny = dx / len;
 
-    // Points de contrôle : S-curve avec amplitude modérée
-    const c1 = { x: from.x + dx * 0.3 + nx * wobble,        y: from.y + dy * 0.3 + ny * wobble };
-    const c2 = { x: from.x + dx * 0.7 + nx * wobble * -0.6, y: from.y + dy * 0.7 + ny * wobble * -0.6 };
+    // Points de contrôle : S-curve prononcée (c2 dévie en sens inverse)
+    const c1 = { x: from.x + dx * 0.25 + nx * wobble,       y: from.y + dy * 0.25 + ny * wobble };
+    const c2 = { x: from.x + dx * 0.75 - nx * wobble * 0.8, y: from.y + dy * 0.75 - ny * wobble * 0.8 };
 
     // Échantillonnage
     const pts = [];
@@ -430,59 +426,6 @@ class GardenScene extends Phaser.Scene {
       g.fillStyle(0x4a3820, 0.35 + rng() * 0.3);
       g.fillCircle(ox, oy, 0.6 + rng() * 1.0);
     }
-  }
-
-  _drawRiver(g) {
-    // Rivière sinueuse traversant le centre (coords texture)
-    const pts = [
-      this._wp(-30, -55),  // entrée haut (côté PSE)
-      this._wp(-15, -20),
-      this._wp(5,    0),   // centre
-      this._wp(15,  22),
-      this._wp(28,  52),   // sortie bas (côté MMR/YEM)
-    ];
-    // Fond (eau profonde)
-    g.lineStyle(7, 0x0e1e2e, 0.8);
-    g.beginPath();
-    g.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) {
-      const mid = { x: (pts[i-1].x + pts[i].x)/2, y: (pts[i-1].y + pts[i].y)/2 };
-      g.lineTo(mid.x, mid.y);
-    }
-    g.lineTo(pts[pts.length-1].x, pts[pts.length-1].y);
-    g.strokePath();
-    // Eau surface (bleu-vert)
-    g.lineStyle(4, 0x1a3848, 0.85);
-    g.beginPath();
-    g.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) {
-      const mid = { x: (pts[i-1].x + pts[i].x)/2, y: (pts[i-1].y + pts[i].y)/2 };
-      g.lineTo(mid.x, mid.y);
-    }
-    g.lineTo(pts[pts.length-1].x, pts[pts.length-1].y);
-    g.strokePath();
-    // Reflets
-    g.lineStyle(1, 0x5a9ab8, 0.3);
-    for (let i = 0; i < pts.length - 1; i++) {
-      const mx = (pts[i].x + pts[i+1].x) / 2;
-      const my = (pts[i].y + pts[i+1].y) / 2;
-      g.beginPath();
-      g.moveTo(mx - 3, my - 1);
-      g.lineTo(mx + 2, my - 1);
-      g.strokePath();
-    }
-    // Pont au centre (traverse la rivière)
-    const bc = this._wp(5, 0);
-    g.fillStyle(0x5a4a30, 0.9);
-    g.fillRect(bc.x - 8, bc.y - 3, 16, 6);
-    g.lineStyle(1, 0x7a6a50, 0.8);
-    g.strokeRect(bc.x - 8, bc.y - 3, 16, 6);
-    g.lineStyle(1, 0x8a7a60, 0.5);
-    g.beginPath(); g.moveTo(bc.x - 8, bc.y); g.lineTo(bc.x + 8, bc.y); g.strokePath();
-    // Piliers du pont
-    g.fillStyle(0x4a3a20, 1);
-    g.fillRect(bc.x - 9, bc.y - 5, 3, 10);
-    g.fillRect(bc.x + 6,  bc.y - 5, 3, 10);
   }
 
   _drawProps(g) {
