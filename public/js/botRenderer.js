@@ -14,16 +14,14 @@ class BotRenderer {
   }
 
   toIso(x, z) {
+    if (this.scene.worldToScreen && this.scene.plantImg) return this.scene.worldToScreen(x, z);
     const s = (typeof WORLD_SCALE !== 'undefined') ? WORLD_SCALE : 1;
     const cam = this.scene._cam || { x: 0, z: 0 };
     const cx = this.scene.cameras.main.width / 2;
     const cy = this.scene.cameras.main.height / 2;
     const rx = x * s - cam.x;
     const rz = z * s - cam.z;
-    return {
-      sx: cx + (rx - rz) * (TILE_W / 2),
-      sy: cy + (rx + rz) * (TILE_H / 2),
-    };
+    return { sx: cx + (rx - rz) * (TILE_W / 2), sy: cy + (rx + rz) * (TILE_H / 2) };
   }
 
   draw(graphics, bot) {

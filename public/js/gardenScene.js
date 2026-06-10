@@ -2,30 +2,26 @@
 
 const TILE_W = 28;
 const TILE_H = 14;
-// Les zones du jardin couvrent ~280 unités (-113 à +140).
-// WORLD_SCALE ramène ça à ~42 unités → texture ~1200×600px, plantes visibles.
-const WORLD_SCALE = 0.15;
+const WORLD_SCALE = 0.25;
 
-// Centres des zones de conflit (coordonnées monde brutes, identiques à seed.js)
+// Centres des zones — Z resserré pour que les deux groupes soient proches visuellement
 const GARDEN_ZONES = [
-  { code: 'PSE', cx: -100, cz: -100 },
-  { code: 'SDN', cx:  -80, cz: -115 },
-  { code: 'UKR', cx:  100, cz:  100 },
-  { code: 'MMR', cx:  140, cz:   85 },
-  { code: 'YEM', cx:  120, cz:  120 },
+  { code: 'PSE', cx: -100, cz: -35 },
+  { code: 'SDN', cx:  -80, cz: -45 },
+  { code: 'UKR', cx:  100, cz:  35 },
+  { code: 'MMR', cx:  140, cz:  25 },
+  { code: 'YEM', cx:  120, cz:  42 },
 ];
 
-// Graphe de chemins : les bots se déplacent uniquement d'un nœud à un voisin.
-// Nœuds : zones + points de jonction sur les chemins.
 const PATH_NODES = [
-  { id: 0, x: -100, z: -100 },  // PSE
-  { id: 1, x:  -80, z: -115 },  // SDN
-  { id: 2, x:  -90, z: -107 },  // jonction Nord (entre PSE et SDN)
-  { id: 3, x:    0, z:    0  },  // jonction centrale (milieu chemin Nord↔Sud)
-  { id: 4, x:  100, z:  100 },  // UKR
-  { id: 5, x:  140, z:   85 },  // MMR
-  { id: 6, x:  120, z:  120 },  // YEM
-  { id: 7, x:  120, z:  102 },  // jonction Sud (entre UKR/MMR/YEM)
+  { id: 0, x: -100, z: -35 },  // PSE
+  { id: 1, x:  -80, z: -45 },  // SDN
+  { id: 2, x:  -90, z: -40 },  // jonction Nord
+  { id: 3, x:    0, z:   0 },  // jonction centrale
+  { id: 4, x:  100, z:  35 },  // UKR
+  { id: 5, x:  140, z:  25 },  // MMR
+  { id: 6, x:  120, z:  42 },  // YEM
+  { id: 7, x:  120, z:  34 },  // jonction Sud
 ];
 // Voisins de chaque nœud (bidirectionnel)
 const PATH_EDGES = {
@@ -51,12 +47,16 @@ class GardenScene extends Phaser.Scene {
     this.hoverTimer = null;
     this.WATER_HOVER_MS = 8000;
 
-    // Vue fixe centrée
     this._cam = { x: 0, z: 0 };
     this._center = { x: 0, z: 0 };
     this._texKey = 'plantTex';
     this._texVer = 0;
     this._dirty = true;
+    this._viewScale = 1;
+    this._imgX = 0;
+    this._imgY = 0;
+    this._texMinX = 0;
+    this._texMinY = 0;
   }
 
   preload() {}
@@ -258,26 +258,21 @@ class GardenScene extends Phaser.Scene {
     }
 
     // --- Chemins entre zones du même groupe ---
-    // Groupe Nord : PSE ↔ SDN
-    this._drawDottedPath(g, this._wp(-100, -100), this._wp(-80, -115), 0x2a3c2a, 0.55, 4);
-    // Groupe Sud : UKR ↔ MMR ↔ YEM
-    this._drawDottedPath(g, this._wp(100, 100),   this._wp(140, 85),   0x2a3c2a, 0.55, 4);
-    this._drawDottedPath(g, this._wp(140, 85),    this._wp(120, 120),  0x2a3c2a, 0.55, 4);
+    this._drawDottedPath(g, this._wp(-100, -35), this._wp(-80, -45),  0x2a3c2a, 0.55, 4);
+    this._drawDottedPath(g, this._wp(100,   35), this._wp(140,  25),  0x2a3c2a, 0.55, 4);
+    this._drawDottedPath(g, this._wp(140,   25), this._wp(120,  42),  0x2a3c2a, 0.55, 4);
     // Chemin central Nord ↔ Sud
-    const northC = this._wp(-90, -107);
-    const southC = this._wp(120, 102);
+    const northC = this._wp(-90, -40);
+    const southC = this._wp(120,  34);
     this._drawDottedPath(g, northC, southC, 0x223322, 0.35, 7);
 
     // --- Eau ---
-    // Mare entre PSE et SDN
-    const pse = this._wp(-100, -100);
-    const sdn = this._wp(-80, -115);
+    const pse = this._wp(-100, -35);
+    const sdn = this._wp(-80,  -45);
     this._drawPool(g, (pse.x + sdn.x) / 2, (pse.y + sdn.y) / 2, 28, 12);
-    // Mare entre UKR et YEM
-    const ukr = this._wp(100, 100);
-    const yem = this._wp(120, 120);
+    const ukr = this._wp(100, 35);
+    const yem = this._wp(120, 42);
     this._drawPool(g, (ukr.x + yem.x) / 2, (ukr.y + yem.y) / 2, 28, 12);
-    // Bassin central sur le chemin principal
     const mid = { x: (northC.x + southC.x) / 2, y: (northC.y + southC.y) / 2 };
     this._drawPool(g, mid.x, mid.y, 50, 22);
 
@@ -325,11 +320,33 @@ class GardenScene extends Phaser.Scene {
 
   _positionPlantLayer() {
     if (!this.plantImg || !this.cameras || !this.cameras.main) return;
-    const cx = this.cameras.main.width / 2;
-    const cy = this.cameras.main.height / 2;
-    // setOrigin(0.5,0.5) → placer le centre de la texture au centre écran
+    const W = this.cameras.main.width;
+    const H = this.cameras.main.height;
+    const uiOffset = 40;
+    const cx = W / 2;
+    const cy = H / 2 + uiOffset * 0.5;
+
+    // Auto-scale : remplit 88% de la zone disponible (sous la stats bar)
+    const availW = W * 0.88;
+    const availH = (H - uiOffset) * 0.88;
+    const scale = Math.min(availW / this.plantImg.width, availH / this.plantImg.height, 2.0);
+
+    this._viewScale = scale;
+    this._imgX = cx;
+    this._imgY = cy;
     this.plantImg.x = cx;
     this.plantImg.y = cy;
+    this.plantImg.setScale(scale);
+  }
+
+  // Convertit une position monde en coordonnée écran (aligné avec la texture scalée)
+  worldToScreen(x, z) {
+    const { ix, iy } = this.plantRenderer.worldIso(x, z);
+    const vs = this._viewScale || 1;
+    return {
+      sx: this._imgX + (ix - this._texMinX - this.plantImg.width  / 2) * vs,
+      sy: this._imgY + (iy - this._texMinY - this.plantImg.height / 2) * vs,
+    };
   }
 
   _initBotAnim(bots) {

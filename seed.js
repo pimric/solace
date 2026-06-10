@@ -5,11 +5,11 @@ const path = require('path');
 const db = new sqlite3.Database(path.join(__dirname, 'solace.db'));
 
 const GARDEN_ZONES = {
-  PSE: { cx: -100, cz: -100 },
-  SDN: { cx:  -80, cz: -115 },
-  UKR: { cx:  100, cz:  100 },
-  MMR: { cx:  140, cz:   85 },
-  YEM: { cx:  120, cz:  120 },
+  PSE: { cx: -100, cz: -35 },
+  SDN: { cx:  -80, cz: -45 },
+  UKR: { cx:  100, cz:  35 },
+  MMR: { cx:  140, cz:  25 },
+  YEM: { cx:  120, cz:  42 },
 };
 
 // Palettes par pays — tiges / fleurs
