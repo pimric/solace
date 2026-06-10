@@ -297,9 +297,18 @@
     document.getElementById('tip-wfill').style.width = pct + '%';
 
     // Positionner : décale pour rester dans l'écran
-    const tw = 200, th = 80;
-    const x = (px + 16 + tw > window.innerWidth)  ? px - tw - 8 : px + 16;
-    const y = (py + th     > window.innerHeight)   ? py - th     : py + 4;
+    tip.style.left = '0px';
+    tip.style.top  = '0px';
+    tip.classList.add('show');
+    const tw = tip.offsetWidth  || 170;
+    const th = tip.offsetHeight || 110;
+    const margin = 8;
+    let x = px + 16;
+    let y = py + 4;
+    if (x + tw > window.innerWidth  - margin) x = px - tw - 8;
+    if (y + th > window.innerHeight - margin) y = py - th - 4;
+    x = Math.max(margin, x);
+    y = Math.max(margin, y);
     tip.style.left = x + 'px';
     tip.style.top  = y + 'px';
     tip.classList.add('show');

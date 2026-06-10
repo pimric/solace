@@ -966,9 +966,30 @@ class GardenScene extends Phaser.Scene {
       // navigate : pan
       this._dragging = true;
       this._dragOrigin = { x: ptr.x - this._panX, y: ptr.y - this._panY };
+      this._tapOrigin = { x: ptr.x, y: ptr.y, t: Date.now() };
     });
 
-    this.input.on('pointerup', () => { this._dragging = false; });
+    this.input.on('pointerup', (ptr) => {
+      this._dragging = false;
+      // Tap one-shot : pas de mouvement significatif et durée courte
+      if (this._activeTool === 'navigate' && this._tapOrigin) {
+        const dx = ptr.x - this._tapOrigin.x;
+        const dy = ptr.y - this._tapOrigin.y;
+        const dt = Date.now() - this._tapOrigin.t;
+        if (Math.hypot(dx, dy) < 8 && dt < 300) {
+          const plant = this._plantAt(ptr.x, ptr.y);
+          // toggle : si on tape sur la même plante déjà affichée, masquer
+          if (plant && plant.id === this._tipPlantId) {
+            this._tipPlantId = null;
+            if (window.hidePlantTip) window.hidePlantTip();
+          } else {
+            this._tipPlantId = plant ? plant.id : null;
+            if (window.showPlantTip) window.showPlantTip(plant || null, ptr.x, ptr.y);
+          }
+        }
+      }
+      this._tapOrigin = null;
+    });
     this.input.on('pointerout', () => {
       this._dragging = false;
       if (window.hidePlantTip) window.hidePlantTip();
@@ -981,6 +1002,11 @@ class GardenScene extends Phaser.Scene {
       if (this._dragging && this._activeTool === 'navigate') {
         this._panX = ptr.x - this._dragOrigin.x;
         this._panY = ptr.y - this._dragOrigin.y;
+        // masquer la tip dès qu'on commence à panner
+        if (this._tapOrigin && Math.hypot(ptr.x - this._tapOrigin.x, ptr.y - this._tapOrigin.y) >= 8) {
+          this._tipPlantId = null;
+          if (window.hidePlantTip) window.hidePlantTip();
+        }
         return;
       }
       const plant = this._plantAt(ptr.x, ptr.y);
