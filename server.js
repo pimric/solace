@@ -141,7 +141,7 @@ for(const p of sorted){
   }
 }
 ctx.globalAlpha=1;
-<\/script></body></html>`);
+</script></body></html>`);
   });
 });
 

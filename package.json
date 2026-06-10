@@ -3,7 +3,13 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "dev": "PORT=3002 node --watch server.js",
+    "status": "node scripts/status.js",
+    "migrate": "node migrate.js",
+    "migrate:check": "node scripts/migrate-check.js",
+    "lint": "eslint . --ext .js --ignore-pattern 'node_modules/**' --ignore-pattern 'public/phaser.min.js'",
+    "test": "node scripts/migrate-check.js && node scripts/status.js"
   },
   "keywords": [],
   "author": "",
@@ -18,5 +24,9 @@
     "phaser": "^4.1.0",
     "sqlite3": "^6.0.1",
     "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.4.1"
   }
 }
