@@ -53,6 +53,12 @@ class GardenScene extends Phaser.Scene {
     this._imgY = 0;
     this._texMinX = 0;
     this._texMinY = 0;
+    // Navigation
+    this._panX = 0;
+    this._panY = 0;
+    this._zoom = 1.0;
+    this._dragging = false;
+    this._dragOrigin = { x: 0, y: 0 };
   }
 
   preload() {}
@@ -291,17 +297,21 @@ class GardenScene extends Phaser.Scene {
       }
     }
 
-    // --- Rayons du pentagone : chaque zone → centre ---
+    // --- Rivière sinueuse + pont ---
+    this._drawRiver(g);
+
+    // --- Chemins courbes : chaque zone → centre ---
     const ctr = this._wp(0, 0);
     const zoneCoords = GARDEN_ZONES.map(z => ({ code: z.code, ...this._wp(z.cx, z.cz) }));
     for (const z of zoneCoords) {
-      this._drawDottedPath(g, { x: z.x, y: z.y }, ctr, 0x2a3c2a, 0.40, 6);
+      this._drawCurvedPath(g, { x: z.x, y: z.y }, ctr, 0xb8a070, 0.55);
     }
+    // Périmètre du pentagone (chemins de ronde, moins larges)
     const perimOrder = [0, 1, 2, 3, 4];
     for (let i = 0; i < perimOrder.length; i++) {
       const a = zoneCoords[perimOrder[i]];
       const b = zoneCoords[perimOrder[(i + 1) % perimOrder.length]];
-      this._drawDottedPath(g, { x: a.x, y: a.y }, { x: b.x, y: b.y }, 0x1e2e1e, 0.25, 9);
+      this._drawCurvedPath(g, { x: a.x, y: a.y }, { x: b.x, y: b.y }, 0x8a7050, 0.35, 10);
     }
 
     // --- Eau ---
@@ -310,6 +320,9 @@ class GardenScene extends Phaser.Scene {
     this._drawPool(g, mPSE.x, mPSE.y, 22, 10);
     const mMMR = this._wp(32, 15);
     this._drawPool(g, mMMR.x, mMMR.y, 22, 10);
+
+    // --- Objets de décor ---
+    this._drawProps(g);
 
     // --- Contour iso diamond ---
     for (const z of GARDEN_ZONES) {
@@ -341,17 +354,134 @@ class GardenScene extends Phaser.Scene {
     g.strokePath();
   }
 
-  _drawDottedPath(g, from, to, color, alpha, gap) {
+  // Chemin courbe naturel : bezier quadratique avec déviation perpendiculaire
+  _drawCurvedPath(g, from, to, color, alpha, wobble = 18) {
     const dx = to.x - from.x;
     const dy = to.y - from.y;
     const len = Math.sqrt(dx * dx + dy * dy);
-    const steps = Math.floor(len / gap);
-    g.fillStyle(color, alpha);
-    for (let i = 0; i <= steps; i++) {
-      if (i % 2 === 0) continue;
+    const px = -dy / len; const py = dx / len; // perpendiculaire
+    // Deux points de contrôle intermédiaires pour S-curve naturelle
+    const t1 = 0.33; const t2 = 0.66;
+    const w1 = wobble * (0.5 + Math.sin(from.x * 0.3) * 0.5);
+    const w2 = -wobble * (0.5 + Math.cos(to.x * 0.3) * 0.5);
+    const c1 = { x: from.x + dx * t1 + px * w1, y: from.y + dy * t1 + py * w1 };
+    const c2 = { x: from.x + dx * t2 + px * w2, y: from.y + dy * t2 + py * w2 };
+
+    // Fond de chemin (terre tassée, plus large)
+    g.lineStyle(3, 0x2a1e0e, alpha * 0.9);
+    g.beginPath();
+    g.moveTo(from.x, from.y);
+    g.lineTo(c1.x, c1.y); g.lineTo(c2.x, c2.y); g.lineTo(to.x, to.y);
+    g.strokePath();
+    // Sable dessus (plus clair, plus fin)
+    g.lineStyle(1.5, color, alpha);
+    g.beginPath();
+    g.moveTo(from.x, from.y);
+    g.lineTo(c1.x, c1.y); g.lineTo(c2.x, c2.y); g.lineTo(to.x, to.y);
+    g.strokePath();
+    // Quelques cailloux le long du chemin
+    const steps = Math.floor(len / 12);
+    let seed = (from.x * 17 + to.y * 31) & 0xffff;
+    const rng = () => { seed = (seed * 1664525 + 1013904223) & 0xffff; return seed / 0xffff; };
+    for (let i = 1; i < steps; i++) {
       const t = i / steps;
-      g.fillCircle(from.x + dx * t, from.y + dy * t, 1.2);
+      const bx = this._cubicBezier(from.x, c1.x, c2.x, to.x, t);
+      const by = this._cubicBezier(from.y, c1.y, c2.y, to.y, t);
+      if (rng() > 0.65) {
+        g.fillStyle(0x3a2e1a, 0.4 + rng() * 0.3);
+        g.fillCircle(bx + (rng() - 0.5) * 4, by + (rng() - 0.5) * 2, 0.8 + rng() * 1.0);
+      }
     }
+  }
+
+  _cubicBezier(p0, p1, p2, p3, t) {
+    const u = 1 - t;
+    return u*u*u*p0 + 3*u*u*t*p1 + 3*u*t*t*p2 + t*t*t*p3;
+  }
+
+  _drawRiver(g) {
+    // Rivière sinueuse traversant le centre (coords texture)
+    const pts = [
+      this._wp(-30, -55),  // entrée haut (côté PSE)
+      this._wp(-15, -20),
+      this._wp(5,    0),   // centre
+      this._wp(15,  22),
+      this._wp(28,  52),   // sortie bas (côté MMR/YEM)
+    ];
+    // Fond (eau profonde)
+    g.lineStyle(7, 0x0e1e2e, 0.8);
+    g.beginPath();
+    g.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) {
+      const mid = { x: (pts[i-1].x + pts[i].x)/2, y: (pts[i-1].y + pts[i].y)/2 };
+      g.lineTo(mid.x, mid.y);
+    }
+    g.lineTo(pts[pts.length-1].x, pts[pts.length-1].y);
+    g.strokePath();
+    // Eau surface (bleu-vert)
+    g.lineStyle(4, 0x1a3848, 0.85);
+    g.beginPath();
+    g.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) {
+      const mid = { x: (pts[i-1].x + pts[i].x)/2, y: (pts[i-1].y + pts[i].y)/2 };
+      g.lineTo(mid.x, mid.y);
+    }
+    g.lineTo(pts[pts.length-1].x, pts[pts.length-1].y);
+    g.strokePath();
+    // Reflets
+    g.lineStyle(1, 0x5a9ab8, 0.3);
+    for (let i = 0; i < pts.length - 1; i++) {
+      const mx = (pts[i].x + pts[i+1].x) / 2;
+      const my = (pts[i].y + pts[i+1].y) / 2;
+      g.beginPath();
+      g.moveTo(mx - 3, my - 1);
+      g.lineTo(mx + 2, my - 1);
+      g.strokePath();
+    }
+    // Pont au centre (traverse la rivière)
+    const bc = this._wp(5, 0);
+    g.fillStyle(0x5a4a30, 0.9);
+    g.fillRect(bc.x - 8, bc.y - 3, 16, 6);
+    g.lineStyle(1, 0x7a6a50, 0.8);
+    g.strokeRect(bc.x - 8, bc.y - 3, 16, 6);
+    g.lineStyle(1, 0x8a7a60, 0.5);
+    g.beginPath(); g.moveTo(bc.x - 8, bc.y); g.lineTo(bc.x + 8, bc.y); g.strokePath();
+    // Piliers du pont
+    g.fillStyle(0x4a3a20, 1);
+    g.fillRect(bc.x - 9, bc.y - 5, 3, 10);
+    g.fillRect(bc.x + 6,  bc.y - 5, 3, 10);
+  }
+
+  _drawProps(g) {
+    // Stèles mémorielles à l'entrée de chaque zone (nord-ouest de la zone)
+    for (const z of GARDEN_ZONES) {
+      const p = this._wp(z.cx - 12, z.cz - 12);
+      // Ombre
+      g.fillStyle(0x000000, 0.25);
+      g.fillEllipse(p.x, p.y + 2, 6, 3);
+      // Corps stèle
+      g.fillStyle(0x4a4035, 1);
+      g.fillRect(p.x - 2, p.y - 10, 4, 10);
+      // Tête arrondie
+      g.fillStyle(0x5a5045, 1);
+      g.fillCircle(p.x, p.y - 10, 2.5);
+      // Gravure (trait horizontal)
+      g.lineStyle(0.8, 0x2a2520, 0.6);
+      g.beginPath(); g.moveTo(p.x - 1.5, p.y - 7); g.lineTo(p.x + 1.5, p.y - 7); g.strokePath();
+      g.beginPath(); g.moveTo(p.x - 1.5, p.y - 5); g.lineTo(p.x + 1.5, p.y - 5); g.strokePath();
+    }
+    // Puits au centre (autour du bassin)
+    const cw = this._wp(-8, 5);
+    g.fillStyle(0x000000, 0.2);
+    g.fillEllipse(cw.x, cw.y + 2, 10, 4);
+    g.fillStyle(0x4a3820, 1);
+    g.fillEllipse(cw.x, cw.y, 10, 5);      // margelle
+    g.fillStyle(0x0a1218, 0.9);
+    g.fillEllipse(cw.x, cw.y - 1, 6, 3);   // ouverture
+    // Poutre du puits
+    g.fillStyle(0x5a4028, 1);
+    g.fillRect(cw.x - 1, cw.y - 7, 2, 7);
+    g.fillRect(cw.x - 4, cw.y - 8, 8, 1.5);
   }
 
   _positionPlantLayer() {
@@ -359,13 +489,15 @@ class GardenScene extends Phaser.Scene {
     const W = this.cameras.main.width;
     const H = this.cameras.main.height;
     const uiOffset = 40;
-    const cx = W / 2;
-    const cy = H / 2 + uiOffset * 0.5;
 
-    // Auto-scale : remplit 88% de la zone disponible (sous la stats bar)
+    // Auto-scale de base : remplit 88% de la zone disponible
     const availW = W * 0.88;
     const availH = (H - uiOffset) * 0.88;
-    const scale = Math.min(availW / this.plantImg.width, availH / this.plantImg.height, 2.0);
+    const baseScale = Math.min(availW / this.plantImg.width, availH / this.plantImg.height, 2.0);
+    const scale = baseScale * this._zoom;
+
+    const cx = W / 2 + this._panX;
+    const cy = H / 2 + uiOffset * 0.5 + this._panY;
 
     this._viewScale = scale;
     this._imgX = cx;
@@ -523,10 +655,25 @@ class GardenScene extends Phaser.Scene {
   }
 
   setupInput() {
+    // Pan drag
+    this.input.on('pointerdown', (ptr) => {
+      this._dragging = true;
+      this._dragOrigin = { x: ptr.x - this._panX, y: ptr.y - this._panY };
+    });
+    this.input.on('pointerup', () => { this._dragging = false; });
+    this.input.on('pointerout', () => {
+      this._dragging = false;
+      if (window.hidePlantTip) window.hidePlantTip();
+    });
+
     this.input.on('pointermove', (ptr) => {
+      if (this._dragging) {
+        this._panX = ptr.x - this._dragOrigin.x;
+        this._panY = ptr.y - this._dragOrigin.y;
+        return;
+      }
       const plant = this._plantAt(ptr.x, ptr.y);
       const hitId = plant ? plant.id : null;
-
       if (hitId !== this.hoverPlantId) {
         this.hoverPlantId = hitId;
         clearTimeout(this.hoverTimer);
@@ -534,12 +681,18 @@ class GardenScene extends Phaser.Scene {
           this.hoverTimer = setTimeout(() => this._waterByVisitor(hitId), this.WATER_HOVER_MS);
         }
       }
-
       if (window.showPlantTip) window.showPlantTip(plant || null, ptr.x, ptr.y);
     });
 
-    this.input.on('pointerout', () => {
-      if (window.hidePlantTip) window.hidePlantTip();
+    // Zoom molette
+    this.input.on('wheel', (_ptr, _dx, _dy, deltaY) => {
+      const factor = deltaY > 0 ? 0.9 : 1.1;
+      this._zoom = Math.max(0.4, Math.min(4.0, this._zoom * factor));
+    });
+
+    // Double-clic reset vue
+    this.input.on('pointerdblclick', () => {
+      this._panX = 0; this._panY = 0; this._zoom = 1.0;
     });
   }
 

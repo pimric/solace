@@ -62,6 +62,45 @@
     background: #7ab8d4; transition: width 0.4s;
   }
 
+  /* Panel info */
+  #info-toggle {
+    position: fixed; bottom: 18px; right: 18px;
+    width: 28px; height: 28px; border-radius: 50%;
+    background: rgba(8,8,16,0.75);
+    border: 1px solid rgba(200,184,154,0.35);
+    color: #c8b89a; font-family: 'Courier New', monospace;
+    font-size: 13px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 30; transition: background 0.2s;
+    user-select: none;
+  }
+  #info-toggle:hover { background: rgba(30,20,8,0.9); }
+  #info-panel {
+    position: fixed; bottom: 55px; right: 18px;
+    width: 260px;
+    background: rgba(6,6,14,0.92);
+    border: 1px solid rgba(200,184,154,0.2);
+    border-left: 2px solid rgba(200,184,154,0.35);
+    padding: 16px 16px 14px;
+    font-family: 'Courier New', monospace;
+    font-size: 9px; letter-spacing: 1.5px; line-height: 1.9;
+    color: #c8b89a;
+    z-index: 30;
+    display: none;
+    pointer-events: none;
+  }
+  #info-panel.open { display: block; }
+  #info-panel h2 {
+    font-size: 11px; letter-spacing: 3px; color: #e8d8b8;
+    margin-bottom: 10px; font-weight: normal;
+  }
+  #info-panel .ip-section { margin-top: 10px; opacity: 0.85; }
+  #info-panel .ip-label { color: #a09070; font-size: 8px; letter-spacing: 2px; }
+  #info-panel .ip-sep {
+    border: none; border-top: 1px solid rgba(200,184,154,0.12);
+    margin: 8px 0;
+  }
+
   /* Wordmark */
   #wordmark {
     position: fixed; bottom: 18px; left: 22px;
@@ -102,6 +141,31 @@
 
 <div id="wordmark">solace</div>
 <div id="connection-state"></div>
+
+<!-- Panel info projet -->
+<button id="info-toggle" title="À propos">?</button>
+<div id="info-panel">
+  <h2>S O L A C E</h2>
+  <div>Jardin mémoriel interactif.<br>Chaque plante représente<br>une victime de conflit armé.</div>
+  <hr class="ip-sep">
+  <div class="ip-section">
+    <div class="ip-label">SOURCE</div>
+    <div>ACLED — Armed Conflict Location<br>& Event Data Project</div>
+  </div>
+  <div class="ip-section">
+    <div class="ip-label">CONFLITS</div>
+    <div>Gaza · Ukraine · Myanmar<br>Yémen · Soudan</div>
+  </div>
+  <hr class="ip-sep">
+  <div class="ip-section">
+    <div class="ip-label">MÉCANIQUE</div>
+    <div>Les plantes vivent ~30 jours<br>sans visiteurs. Survolez pour<br>arroser et prolonger leur vie.</div>
+  </div>
+  <div class="ip-section">
+    <div class="ip-label">POPULATION</div>
+    <div id="ip-stats">— vies · — vivantes</div>
+  </div>
+</div>
 
 <script>
   window.onerror = function(msg, url, line, col, err) {
@@ -158,6 +222,22 @@
     tip.classList.add('show');
   };
   window.hidePlantTip = function() { tip.classList.remove('show'); };
+
+  // Panel info toggle
+  document.getElementById('info-toggle').addEventListener('click', function() {
+    const panel = document.getElementById('info-panel');
+    panel.classList.toggle('open');
+    this.textContent = panel.classList.contains('open') ? '×' : '?';
+  });
+  // Sync stats dans le panel
+  function updateInfoStats() {
+    const lives = document.getElementById('s-lives').textContent;
+    const alive = document.getElementById('s-alive').textContent;
+    if (lives !== '—') {
+      document.getElementById('ip-stats').textContent = lives + ' vies · ' + alive + ' vivantes';
+    }
+  }
+  setInterval(updateInfoStats, 2000);
 </script>
 
 <script src="/phaser.min.js"></script>
