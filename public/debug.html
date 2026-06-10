@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="UTF-8">
+<style>* { margin:0; padding:0; } body { background:#080810; }
+canvas { display:block; }
+#lbl { position:fixed; bottom:14px; left:18px; font:12px monospace; color:#c8b89a; opacity:.5; letter-spacing:3px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="lbl">solace</div>
+<script>
+const c = document.getElementById('c');
+const ctx = c.getContext('2d');
+c.width = 1280; c.height = 800;
+ctx.fillStyle = '#080810';
+ctx.fillRect(0,0,1280,800);
+
+const GEO = { xmin:30,xmax:97,zmin:14,zmax:50 };
+function toIso(lng, lat) {
+  const gx = ((lng - GEO.xmin)/(GEO.xmax-GEO.xmin) - 0.5) * 160;
+  const gz = ((lat - GEO.zmin)/(GEO.zmax-GEO.zmin) - 0.5) * 80;
+  const TILE_W = 32, TILE_H = 16, cx = 640, cy = 400;
+  return {
+    sx: cx + (gx - gz) * (TILE_W/2),
+    sy: cy + (gx + gz) * (TILE_H/2),
+  };
+}
+
+fetch('/api/garden').then(r=>r.json()).then(({plants}) => {
+  const sorted = plants.slice().sort((a,b)=>(a.pos_x+a.pos_z)-(b.pos_x+b.pos_z));
+  for (const p of sorted) {
+    const {sx, sy} = toIso(p.pos_x, p.pos_z);
+    const alive = p.is_alive === 1;
+    const h = Math.max(3, Math.floor((p.stem_height||1) * 12));
+    const curve = (p.stem_curve||0) * 6;
+
+    // Tige
+    ctx.strokeStyle = alive ? (p.primary_color||'#2d4a2d') : '#4a3a2a';
+    ctx.globalAlpha = alive ? 0.9 : 0.4;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(sx + curve, sy - h);
+    ctx.stroke();
+
+    if (!alive) continue;
+
+    // Feuilles
+    ctx.fillStyle = p.secondary_color || '#3a5c3a';
+    ctx.globalAlpha = 0.85;
+    const lc = Math.min(p.leaf_count||4, 8);
+    for (let i=0;i<lc;i++) {
+      const a = (i/lc)*Math.PI*2;
+      ctx.fillRect(sx+curve+Math.cos(a)*3, sy-h*0.6+Math.sin(a)*2, 2, 2);
+    }
+
+    // Pétales civils
+    if (p.victim_type === 'civilian' && p.petal_count > 0) {
+      ctx.fillStyle = p.primary_color || '#3a5c3a';
+      ctx.globalAlpha = 0.7;
+      const pc = Math.min(p.petal_count, 8);
+      for (let i=0;i<pc;i++) {
+        const a = (i/pc)*Math.PI*2;
+        ctx.fillRect(sx+curve+Math.cos(a)*2, sy-h+Math.sin(a)*2, 1, 1);
+      }
+    }
+
+    // Lueur enfant
+    if (p.victim_type==='civilian' && p.stem_height<0.5) {
+      ctx.fillStyle = '#5a7c5a';
+      ctx.globalAlpha = 0.15;
+      ctx.beginPath();
+      ctx.arc(sx+curve, sy-h, 4, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+  document.title = `solace — ${plants.length} plants`;
+});
+</script>
+</body></html>

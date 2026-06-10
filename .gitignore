@@ -1,0 +1,5 @@
+node_modules/
+solace.db
+*.log
+.env
+acled_raw.txt
