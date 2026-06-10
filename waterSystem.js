@@ -50,8 +50,8 @@ async function computeDeltas(db) {
     // Paix : +5 bonus
     if (peaceActive[p.country_code]) delta += 5;
 
-    // Perte naturelle (transpiration), réduite la nuit
-    delta -= isNight ? 0.1 : 0.3;
+    // Perte naturelle (transpiration) — calibrée pour ~3 mois sans visite
+    delta -= isNight ? 0.0002 : 0.0005;
 
     deltas.push({ plant_id: p.id, delta: Math.round(delta * 10) / 10 });
   }
@@ -73,7 +73,7 @@ async function getWeather(db, countryCode) {
 
   const c = coords[countryCode];
   if (!c || !OWM_KEY) {
-    return { rain: 0.1, sun: 1.0 };
+    return { rain: 0, sun: 0.5 }; // fallback neutre/sec — cohérent zones de conflit
   }
 
   try {
