@@ -66,7 +66,8 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #f5f5f0; }
   <div class="bar-row"><span class="k">VITALITÉ</span><div class="bar-bg"><div class="bar-fill" id="bv" style="width:0%;background:#7a4050"></div></div></div>
   <div class="info" id="p-info"></div>
 </div>
-<div id="ctrl">DRAG · SCROLL · CLIQUER</div>
+<div id="ctrl">DRAG · SCROLL · CLIQUER · <b>V</b> = STYLE DRAPÉ · <b>B</b> = MÉLANGE</div>
+<div id="vstyle" style="position:fixed;left:14px;bottom:14px;font:600 11px 'Courier New',monospace;color:#cdd6e0;background:rgba(20,24,30,.6);padding:6px 10px;border-radius:4px;z-index:5;letter-spacing:1px;">DRAPÉ : moine + pleureuse + pelerin + caryatide</div>
 <button id="regen">⟳ &nbsp;RÉGÉNÉRER</button>
 
 <script type="importmap">
@@ -410,23 +411,103 @@ function playAction(v, action) {                     // fondu enchaîné propre
   v.cur = action;
 }
 
-// Robe drapée à capuche (unités monde), calée sur la hauteur de tête `top` du mannequin.
-// Enveloppe corps + bras + tête ; seuls les pieds/chevilles dépassent sous l'ourlet.
-function buildRobe(color, s, top) {
-  const g = new THREE.Group();
-  const mat = new THREE.MeshLambertMaterial({ color, flatShading: true });
-  const shoulder = top * 0.82;        // niveau des épaules
-  const hem = 0.16;                   // ourlet : laisse voir chevilles/pieds
-  // corps : robe évasée du sol aux épaules
-  const hBody = shoulder - hem;
-  const body = addMesh(g, new THREE.CylinderGeometry(0.20, 0.42, hBody, 10, 1, true), mat, [0, hem + hBody / 2, 0]);
-  body.scale.set(SR(s, 0.95, 1.08), 1, SR(s + 3, 0.96, 1.14));   // léger drapé asymétrique
-  // cape d'épaules : couvre bras et épaules
-  addMesh(g, new THREE.ConeGeometry(0.34, 0.40, 10, 1, true), mat, [0, shoulder - 0.05, 0]);
-  // coiffe : dôme enveloppant la tête, légèrement penché (tête baissée, recueillement)
-  const cowl = addMesh(g, new THREE.SphereGeometry(0.19, 10, 8), mat, [0, top + 0.02, 0.02], [0.12, 0, 0]);
-  cowl.scale.set(1.05, 1.28, 1.32);
-  return g;
+// ── Bibliothèque de drapés ────────────────────────────────────────────────────────
+// Problème résolu : les bras du mannequin dépassaient ("pylônes"). On les rentre dans
+// le torse (tuckArms) ET on enveloppe le tout dans un drapé continu (LatheGeometry)
+// avec des plis verticaux (flute) → lecture "tissu" plutôt que cylindre lisse.
+
+// Rentre les bras (upper-arm) dans le torse pour que la robe les couvre.
+function tuckArms(root) {
+  root.updateWorldMatrix(true, true);
+  root.traverse(o => {
+    if (o.isBone && /(Left|Right)Arm$/.test(o.name)) o.scale.setScalar(0.12);
+  });
+}
+
+// Crée un drapé révolutionné à partir d'un profil [r, y], avec plis verticaux.
+//   folds : nombre de plis sur le tour · depth : amplitude relative · seed : asymétrie
+function drape(profile, color, { folds = 14, depth = 0.06, seed = 0, seg = 64 } = {}) {
+  const pts = profile.map(([r, y]) => new THREE.Vector2(r, y));
+  const geo = new THREE.LatheGeometry(pts, seg);
+  const p = geo.attributes.position;
+  const ph = SR(seed, 0, Math.PI * 2);
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), z = p.getZ(i);
+    const r = Math.hypot(x, z);
+    if (r < 1e-4) continue;
+    const ang = Math.atan2(z, x);
+    // plis principaux + une houle lente asymétrique → étoffe vivante
+    const k = 1 + depth * Math.sin(folds * ang + ph) + depth * 0.35 * Math.sin(3 * ang - ph);
+    p.setX(i, x * k); p.setZ(i, z * k);
+  }
+  geo.computeVertexNormals();
+  const mat = new THREE.MeshLambertMaterial({ color, flatShading: true, side: THREE.DoubleSide });
+  const m = new THREE.Mesh(geo, mat);
+  m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
+
+// Chaque style = fonction (color, seed, top) -> Group. `top` = hauteur de tête monde.
+const ROBE_STYLES = {
+  // Moine : robe + capuche en un seul drapé continu, plis moyens. Silhouette sobre.
+  moine(color, seed, top) {
+    const g = new THREE.Group();
+    const sh = top * 0.80, hem = 0.14;
+    g.add(drape([
+      [0.46, hem], [0.42, top * 0.30], [0.34, top * 0.55],
+      [0.40, sh], [0.18, sh + 0.06],                 // épaules larges (couvrent les bras)
+      [0.24, top - 0.02], [0.20, top + 0.06],        // capuche
+      [0.11, top + 0.17], [0.0, top + 0.20],
+    ], color, { folds: 13, depth: 0.05, seed }));
+    g.rotation.y = SR(seed, 0, 6.28);
+    return g;
+  },
+  // Pleureuse : long voile intégral, très évasé, tête entièrement drapée, plis fins.
+  pleureuse(color, seed, top) {
+    const g = new THREE.Group();
+    g.add(drape([
+      [0.52, 0.0], [0.46, top * 0.25], [0.38, top * 0.5],
+      [0.34, top * 0.72], [0.30, top * 0.88],        // pas d'épaules marquées : voile
+      [0.26, top + 0.04], [0.18, top + 0.16],        // crâne voilé
+      [0.09, top + 0.26], [0.0, top + 0.30],
+    ], color, { folds: 22, depth: 0.045, seed, seg: 80 }));
+    g.rotation.y = SR(seed + 1, 0, 6.28);
+    return g;
+  },
+  // Pèlerin : robe étroite + grande pèlerine conique qui retombe au-delà des bras.
+  pelerin(color, seed, top) {
+    const g = new THREE.Group();
+    const sh = top * 0.78, hem = 0.16;
+    g.add(drape([
+      [0.34, hem], [0.30, top * 0.35], [0.26, top * 0.6], [0.22, sh],
+    ], color, { folds: 16, depth: 0.06, seed }));
+    // pèlerine : large cône d'épaules qui engloutit les bras
+    g.add(drape([
+      [0.52, sh - 0.08], [0.40, sh + 0.08], [0.16, sh + 0.18],
+    ], color, { folds: 10, depth: 0.07, seed: seed + 2, seg: 48 }));
+    // capuche arrondie, tête baissée
+    const hood = drape([
+      [0.20, top - 0.10], [0.22, top], [0.16, top + 0.10], [0.0, top + 0.16],
+    ], color, { folds: 8, depth: 0.04, seed: seed + 3, seg: 40 });
+    hood.rotation.x = 0.14;
+    g.add(hood);
+    return g;
+  },
+  // Caryatide : colonne cannelée — plis verticaux profonds, coiffe haute. Assume le côté "stèle".
+  caryatide(color, seed, top) {
+    const g = new THREE.Group();
+    const sh = top * 0.84, hem = 0.10;
+    g.add(drape([
+      [0.40, hem], [0.38, top * 0.4], [0.36, top * 0.7], [0.34, sh],
+      [0.20, sh + 0.05], [0.22, top], [0.16, top + 0.18], [0.0, top + 0.24],
+    ], color, { folds: 26, depth: 0.10, seed, seg: 96 }));   // cannelures marquées
+    return g;
+  },
+};
+const STYLE_ORDER = ['moine', 'pleureuse', 'pelerin', 'caryatide'];
+
+function buildRobe(color, seed, top, style) {
+  return ROBE_STYLES[style || 'moine'](color, seed, top);
 }
 
 loader.load('/plant/vendor/Xbot.glb', gltf => {
@@ -439,11 +520,15 @@ loader.load('/plant/vendor/Xbot.glb', gltf => {
     const holder = new THREE.Group();
     const root = skelClone(gltf.scene);
     const headY = fitSkinned(root, 1.35);   // envergure squelette ~1.35 u (≈ 1.5 u visuel)
+    tuckArms(root);                          // rentre les bras → plus de "pylônes"
     // mannequin en sombre mat : seules les chevilles/pieds dépassent sous la robe
     const skin = new THREE.MeshLambertMaterial({ color: 0x20242a });
     root.traverse(c => { if (c.isMesh) { c.material = skin; c.castShadow = true; c.receiveShadow = true; } });
     holder.add(root);
-    holder.add(buildRobe(VISITOR_ROBES[i % 3], i * 41.7 + 5, headY));
+    const color = VISITOR_ROBES[i % 3], seed = i * 41.7 + 5;
+    const style = STYLE_ORDER[i % STYLE_ORDER.length];   // un style distinct par visiteur
+    let robe = buildRobe(color, seed, headY, style);
+    holder.add(robe);
     scene.add(holder);
 
     const mixer = new THREE.AnimationMixer(root);
@@ -451,7 +536,8 @@ loader.load('/plant/vendor/Xbot.glb', gltf => {
     const idle  = mixer.clipAction(idleClip);
     mixers.push(mixer);
 
-    const v = { root: holder, walk, idle, path, t: R(0.1, 0.9), dir: 1, pause: 0, state: 'walk', cur: null };
+    const v = { root: holder, walk, idle, path, t: R(0.1, 0.9), dir: 1, pause: 0, state: 'walk', cur: null,
+                color, seed, headY, style, get robe() { return robe; }, set robe(r) { robe = r; } };
     playAction(v, walk);
     visitors.push(v);
   });
@@ -611,6 +697,29 @@ let elapsed = 0;
 
 window.addEventListener('resize',()=>{
   camera.aspect=W()/H(); camera.updateProjectionMatrix(); renderer.setSize(W(),H());
+});
+
+// Test des styles de drapé en direct :
+//   V = tous les visiteurs adoptent le même style (cycle dans STYLE_ORDER)
+//   B = chaque visiteur reprend un style distinct (mélange = comparaison côte à côte)
+let _styleIdx = -1;
+function applyStyle(uniform) {
+  if (uniform) _styleIdx = (_styleIdx + 1) % STYLE_ORDER.length;
+  visitors.forEach((v, i) => {
+    v.style = uniform ? STYLE_ORDER[_styleIdx] : STYLE_ORDER[i % STYLE_ORDER.length];
+    v.root.remove(v.robe);
+    v.robe.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+    v.robe = buildRobe(v.color, v.seed, v.headY, v.style);
+    v.root.add(v.robe);
+  });
+  document.getElementById('vstyle').textContent = uniform
+    ? 'DRAPÉ : ' + STYLE_ORDER[_styleIdx].toUpperCase() + '  (' + (_styleIdx + 1) + '/' + STYLE_ORDER.length + ')'
+    : 'DRAPÉ : ' + visitors.map(v => v.style).join(' + ');
+}
+window.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (k === 'v') applyStyle(true);
+  else if (k === 'b') applyStyle(false);
 });
 
 // Exposer pour le pipeline social-export.js
