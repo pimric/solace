@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SOLACE — Générateur de plantes</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #f5f5f0; }
+#c { display: block; position: fixed; inset: 0; }
+
+#hd {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 20;
+  padding: 20px 28px 50px;
+  background: linear-gradient(to bottom, #f5f5f0ee 0%, transparent 100%);
+  pointer-events: none;
+}
+#hd h1 { font: 600 10px/1 'Courier New', monospace; letter-spacing: 5px; text-transform: uppercase; color: #3a5a7a; }
+#hd p  { margin-top: 5px; font: 400 9px/1 'Courier New', monospace; letter-spacing: 3px; color: #8a9aaa; }
+
+#zones {
+  position: fixed; left: 24px; top: 50%; transform: translateY(-50%);
+  z-index: 20; display: flex; flex-direction: column; gap: 14px;
+}
+.zd { display: flex; align-items: center; gap: 9px; cursor: pointer; opacity: 0.35; transition: opacity .25s; }
+.zd:hover, .zd.on { opacity: 1; }
+.zd .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.zd .lbl { font: 400 8px/1 'Courier New', monospace; letter-spacing: 3px; text-transform: uppercase; color: #4a6a8a; }
+
+#dna {
+  position: fixed; right: 24px; top: 50%; transform: translateY(-50%);
+  width: 190px; z-index: 20; opacity: 0; transition: opacity .4s; pointer-events: none;
+}
+#dna.on { opacity: 1; }
+#dna .nm  { font: 600 12px/1.3 'Courier New', monospace; color: #1a2a3a; margin-bottom: 3px; }
+#dna .lat { font: 400 9px/1 'Courier New', monospace; color: #7a8a9a; font-style: italic; margin-bottom: 4px; }
+#dna .ctry { font: 400 8px/1 'Courier New', monospace; letter-spacing: 3px; text-transform: uppercase; color: #6a8aaa; margin-bottom: 18px; }
+.bar-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; }
+.bar-row .k { font: 400 8px/1 'Courier New', monospace; letter-spacing: 2px; color: #9aaaba; width: 72px; }
+.bar-bg { width: 75px; height: 2px; background: #dde0e4; }
+.bar-fill { height: 100%; transition: width .7s cubic-bezier(.4,0,.2,1); }
+#dna .info { margin-top: 16px; font: 400 9px/1.7 'Courier New', monospace; color: #8a9aaa; white-space: pre-line; }
+
+#ctrl { position: fixed; bottom: 20px; left: 24px; z-index: 20; font: 400 8px/1 'Courier New', monospace; letter-spacing: 3px; color: #b0bac4; pointer-events: none; }
+#regen { position: fixed; bottom: 16px; right: 24px; z-index: 20; padding: 10px 18px; background: transparent; border: 1px solid #c0cad4; color: #7a8a9a; cursor: pointer; font: 400 8px/1 'Courier New', monospace; letter-spacing: 3px; transition: all .25s; }
+#regen:hover { border-color: #4a6a8a; color: #2a4a6a; background: #eaeff4; }
+
+#loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 99; background: #f5f5f0; font: 400 10px/1 'Courier New', monospace; letter-spacing: 5px; color: #8a9aaa; transition: opacity .8s; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="loading">CHARGEMENT …</div>
+
+<div id="hd">
+  <h1>SOLACE &nbsp;✦&nbsp; GÉNÉRATEUR DE PLANTES</h1>
+  <p>prototype v2 &nbsp;·&nbsp; three.js &nbsp;·&nbsp; vent + oiseaux + visiteurs</p>
+</div>
+<div id="zones"></div>
+<div id="dna">
+  <div class="nm" id="p-name">—</div>
+  <div class="lat" id="p-lat">—</div>
+  <div class="ctry" id="p-ctry">—</div>
+  <div class="bar-row"><span class="k">HAUTEUR</span><div class="bar-bg"><div class="bar-fill" id="bh" style="width:0%;background:#4a7090"></div></div></div>
+  <div class="bar-row"><span class="k">FEUILLAGE</span><div class="bar-bg"><div class="bar-fill" id="bf" style="width:0%;background:#3a7050"></div></div></div>
+  <div class="bar-row"><span class="k">VITALITÉ</span><div class="bar-bg"><div class="bar-fill" id="bv" style="width:0%;background:#7a4050"></div></div></div>
+  <div class="info" id="p-info"></div>
+</div>
+<div id="ctrl">DRAG · SCROLL · CLIQUER</div>
+<button id="regen">⟳ &nbsp;RÉGÉNÉRER</button>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "/plant/vendor/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from '/plant/vendor/OrbitControls.js';
+import { GLTFLoader }    from '/plant/vendor/GLTFLoader.js';
+import { clone as skelClone } from '/plant/vendor/SkeletonUtils.js';
+
+// ── Données ──────────────────────────────────────────────────────────────────
+const PLANTS_DATA = [
+  { name:'Anémone de Gaza',    latin:'Anemone coronaria',  zone:'GAZA',    region:'Palestine', fatalities:847,  civilians:true,  health:0.72, age:412, type:'flower',    pal:{stem:0x2d5a2d, leaf:0x3a6b35, flower:0xe84343, center:0xffd060}, dotColor:'#e84343', heightF:0.7,  leafD:0.85, complex:0.9  },
+  { name:'Acacia du Soudan',   latin:'Acacia tortilis',    zone:'SOUDAN',  region:'Sudan',     fatalities:2340, civilians:false, health:0.42, age:180, type:'umbrella',  pal:{trunk:0x6b4820, leaf:0x8b7338, accent:0xc0a040},                 dotColor:'#c0a040', heightF:1.1,  leafD:0.5,  complex:0.6  },
+  { name:"Tournesol d'Ukraine",latin:'Helianthus annuus',  zone:'UKRAINE', region:'Ukraine',   fatalities:1205, civilians:true,  health:0.88, age:823, type:'sunflower', pal:{stem:0x4a7835, leaf:0x3a6828, flower:0xf5c518, center:0x6b3a18}, dotColor:'#f5c518', heightF:1.0,  leafD:0.75, complex:0.8  },
+  { name:'Dragonnier du Yémen',latin:'Dracaena cinnabari', zone:'YÉMEN',   region:'Yemen',     fatalities:1890, civilians:false, health:0.35, age:550, type:'dragon',    pal:{trunk:0x7a6040, leaf:0x4a7040, accent:0x8b2828},                 dotColor:'#8b5040', heightF:0.85, leafD:0.6,  complex:0.75 },
+  { name:'Padauk du Myanmar',  latin:'Pterocarpus indicus',zone:'MYANMAR', region:'Myanmar',   fatalities:967,  civilians:true,  health:0.65, age:290, type:'tropical',  pal:{trunk:0x5c3818, leaf:0x2d6038, flower:0xf07030, accent:0xd44820}, dotColor:'#f07030', heightF:1.3,  leafD:0.9,  complex:1.0  },
+];
+const POSITIONS = [{x:-2.4,z:-1.0},{x:-0.8,z:1.8},{x:0.6,z:-2.0},{x:2.0,z:1.0},{x:3.0,z:-0.4}];
+
+// ── Scène ────────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const W = () => window.innerWidth, H = () => window.innerHeight;
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(W(), H());
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xf5f5f0);
+scene.fog = new THREE.Fog(0xf5f5f0, 18, 35);
+
+const camera = new THREE.PerspectiveCamera(44, W()/H(), 0.1, 80);
+camera.position.set(2, 8, 13);
+
+const orb = new OrbitControls(camera, renderer.domElement);
+orb.enableDamping = true; orb.dampingFactor = 0.06;
+orb.minDistance = 4; orb.maxDistance = 26;
+orb.maxPolarAngle = Math.PI * 0.48;
+orb.autoRotate = true; orb.autoRotateSpeed = 0.3;
+orb.target.set(0.5, 0.8, 0);
+
+// ── Lumières ─────────────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0xffffff, 1.4));
+
+const sun = new THREE.DirectionalLight(0xfff8e8, 2.2);
+sun.position.set(6, 12, 5);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { near:0.5, far:45, left:-12, right:12, top:12, bottom:-12 });
+sun.shadow.bias = -0.001;
+scene.add(sun);
+
+const fill = new THREE.DirectionalLight(0xd0e8ff, 0.7);
+fill.position.set(-5, 4, -4);
+scene.add(fill);
+
+scene.add(new THREE.HemisphereLight(0xd0e8ff, 0xd4c8a0, 0.5));
+
+// ── Sol ───────────────────────────────────────────────────────────────────────
+(function buildGround() {
+  const geo = new THREE.PlaneGeometry(22, 22, 36, 36);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i);
+    const n = (Math.sin(x*0.9)*Math.cos(y*0.7)*0.07 + Math.sin(x*1.7+1)*Math.sin(y*1.3)*0.03 + (Math.random()-.5)*0.04)
+            * Math.max(0, 1 - Math.sqrt(x*x+y*y)*0.04);
+    pos.setZ(i, n);
+  }
+  geo.computeVertexNormals();
+  const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color:0xe8e8de, flatShading:true }));
+  mesh.rotation.x = -Math.PI/2;
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+  const grid = new THREE.GridHelper(22, 22, 0xd8d8cc, 0xd8d8cc);
+  grid.position.y = 0.005;
+  scene.add(grid);
+})();
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const R  = (a,b) => a + Math.random()*(b-a);
+const SR = (s,a,b) => { const x = Math.sin(s*127.1+311.7)*43758.5; return a+(x-Math.floor(x))*(b-a); };
+
+// ── Matériaux avec vent intégré ───────────────────────────────────────────────
+// Chaque matériau "wind" reçoit un uniform time et un offset monde unique
+const windUniforms = []; // liste pour mise à jour dans loop()
+
+function windMat(color, plantIdx, meshHeightMax) {
+  const mat = new THREE.MeshLambertMaterial({ color, flatShading: true });
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime   = { value: 0 };
+    shader.uniforms.uOffset = { value: new THREE.Vector2(plantIdx * 1.37, plantIdx * 2.71) };
+    shader.uniforms.uHMax   = { value: meshHeightMax };
+    shader.vertexShader = `
+      uniform float uTime;
+      uniform vec2  uOffset;
+      uniform float uHMax;
+    ` + shader.vertexShader.replace('#include <begin_vertex>', `
+      vec3 transformed = position;
+      float h = clamp(position.y / max(uHMax, 0.1), 0.0, 1.0);
+      float curve = h * h;                          // racines fixes, pointes souples
+      // Rafale : modulation lente et globale de l'intensité du vent
+      float gust = 0.55 + 0.45 * sin(uTime * 0.33 + uOffset.x);
+      // Houle : deux ondes croisées, amplitude nette aux pointes
+      float wx = ( sin(uTime * 1.1 + uOffset.x + position.y * 1.6)
+                 + 0.5 * sin(uTime * 2.3 + uOffset.y) ) * 0.22 * curve * gust;
+      float wz = ( cos(uTime * 0.9 + uOffset.x + position.y * 1.2)
+                 + 0.5 * cos(uTime * 1.7 + uOffset.y * 1.3) ) * 0.15 * curve * gust;
+      // Inclinaison d'ensemble du buisson dans la rafale
+      float lean = sin(uTime * 0.5 + uOffset.x) * 0.05 * curve;
+      transformed.x += wx + lean;
+      transformed.z += wz;
+    `);
+    windUniforms.push(shader.uniforms);
+  };
+  return mat;
+}
+
+// ── Générateurs plantes ───────────────────────────────────────────────────────
+function addMesh(parent, geo, mat, pos=[0,0,0], rot=[0,0,0]) {
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(...pos); m.rotation.set(...rot);
+  m.castShadow = true; m.receiveShadow = true;
+  parent.add(m); return m;
+}
+
+function mkFlower(d, s, pi) {
+  const g = new THREE.Group();
+  const h = 0.45 + d.heightF * 0.75;
+  const wm = (c) => windMat(c, pi, h);
+
+  addMesh(g, new THREE.CylinderGeometry(0.013,0.028,h,5), wm(d.pal.stem), [0,h/2,0], [SR(s,-0.08,0.08),0,SR(s+1,-0.06,0.06)]);
+  const lc = 2 + Math.floor(d.leafD*3);
+  for (let i=0;i<lc;i++) {
+    const a = i*2.39+SR(s+i,0,0.4);
+    const geo = new THREE.SphereGeometry(0.1,4,3); geo.scale(0.55,0.18,1.3);
+    addMesh(g, geo, wm(d.pal.leaf), [Math.cos(a)*0.16, h*(0.25+i*0.2), Math.sin(a)*0.16], [0.25,a,0.35]);
+  }
+  const pc = 5+Math.floor(d.complex*4);
+  for (let i=0;i<pc;i++) {
+    const a=(i/pc)*Math.PI*2;
+    const geo=new THREE.SphereGeometry(0.075,4,3); geo.scale(0.75,0.28,1.7);
+    addMesh(g, geo, wm(d.pal.flower), [Math.cos(a)*0.13,h+0.02,Math.sin(a)*0.13],[0,-a,0]);
+  }
+  addMesh(g, new THREE.SphereGeometry(0.065,6,5), wm(d.pal.center), [0,h+0.06,0]);
+  return g;
+}
+
+function mkUmbrella(d, s, pi) {
+  const g = new THREE.Group();
+  const h = 0.9 + d.heightF;
+  const wm = (c) => windMat(c, pi, h);
+
+  addMesh(g, new THREE.CylinderGeometry(0.05,0.11,h*0.62,6), wm(d.pal.trunk), [0,h*0.31,0]);
+  const R2 = 0.75+d.leafD*0.5;
+  for (let l=0;l<3;l++) {
+    const y=h*0.62+l*0.11, r=R2*(1-l*0.18);
+    for (let i=0;i<8;i++) {
+      const a=(i/8)*Math.PI*2+l*0.4;
+      const geo=new THREE.SphereGeometry(r*0.32,4,2); geo.scale(1.1,0.12,1.1);
+      addMesh(g, geo, wm(d.pal.leaf), [Math.cos(a)*r*0.65,y,Math.sin(a)*r*0.65]);
+    }
+  }
+  addMesh(g, new THREE.IcosahedronGeometry(0.22,1), wm(d.pal.accent), [0,h*0.62+0.12,0]);
+  return g;
+}
+
+function mkSunflower(d, s, pi) {
+  const g = new THREE.Group();
+  const h = 0.8+d.heightF*0.95;
+  const wm = (c) => windMat(c, pi, h);
+
+  addMesh(g, new THREE.CylinderGeometry(0.019,0.038,h,6), wm(d.pal.stem), [0,h/2,0], [SR(s,-0.07,0.07),0,SR(s+1,-0.07,0.07)]);
+  for (let i=0;i<5;i++) {
+    const a=i*1.26+SR(s+i,0,0.3);
+    const geo=new THREE.SphereGeometry(0.2,5,3); geo.scale(0.55,0.13,2.0);
+    addMesh(g, geo, wm(d.pal.leaf), [Math.cos(a)*0.22,h*(0.28+i*0.15),Math.sin(a)*0.22],[0.28,a,0.35]);
+  }
+  const hg = new THREE.Group(); hg.position.set(0,h,0); hg.rotation.z=0.28;
+  for (let i=0;i<18;i++) {
+    const a=(i/18)*Math.PI*2;
+    const geo=new THREE.SphereGeometry(0.085,3,2); geo.scale(0.6,0.22,2.1);
+    addMesh(hg, geo, wm(d.pal.flower), [Math.cos(a)*0.22,0,Math.sin(a)*0.22],[0,-a,0]);
+  }
+  addMesh(hg, new THREE.CylinderGeometry(0.16,0.16,0.07,10), wm(d.pal.center));
+  g.add(hg); return g;
+}
+
+function mkDragon(d, s, pi) {
+  const g = new THREE.Group();
+  const h = 0.65+d.heightF*0.95;
+  const wm = (c) => windMat(c, pi, h);
+
+  addMesh(g, new THREE.CylinderGeometry(0.09,0.15,h*0.58,7), wm(d.pal.trunk), [0,h*0.29,0]);
+  const fc = 4+Math.floor(d.complex*3);
+  for (let i=0;i<fc;i++) {
+    const a=(i/fc)*Math.PI*2, bl=0.28+SR(s+i,0.08,0.28);
+    addMesh(g, new THREE.CylinderGeometry(0.018,0.045,bl,5), wm(d.pal.trunk),
+      [Math.cos(a)*0.1,h*0.58,Math.sin(a)*0.1],[Math.cos(a)*0.55,0,Math.sin(a)*0.55]);
+    addMesh(g, new THREE.IcosahedronGeometry(0.18+SR(s+i*2,0,0.1),1), wm(d.pal.leaf),
+      [Math.cos(a)*(0.1+bl*0.45), h*0.58+bl*0.52, Math.sin(a)*(0.1+bl*0.45)]);
+  }
+  return g;
+}
+
+function mkTropical(d, s, pi) {
+  const g = new THREE.Group();
+  const h = 1.05+d.heightF*1.1;
+  const wm = (c) => windMat(c, pi, h);
+
+  addMesh(g, new THREE.CylinderGeometry(0.06,0.13,h*0.62,6), wm(d.pal.trunk), [0,h*0.31,0]);
+  const lc=6+Math.floor(d.leafD*4);
+  for (let i=0;i<lc;i++) {
+    const a=(i/lc)*Math.PI*2, lv=Math.floor(i/(lc/3));
+    const geo=new THREE.SphereGeometry(0.24,4,3); geo.scale(0.75,0.11,2.4);
+    addMesh(g, geo, wm(d.pal.leaf), [Math.cos(a)*(0.18+lv*0.06),h*(0.52+lv*0.11),Math.sin(a)*(0.18+lv*0.06)],[Math.cos(a)*0.38,a,Math.sin(a)*0.2]);
+  }
+  const flc=4+Math.floor(d.complex*5);
+  for (let i=0;i<flc;i++) {
+    const a=(i/flc)*Math.PI*2+0.5;
+    addMesh(g, new THREE.IcosahedronGeometry(0.065,0), wm(d.pal.flower),
+      [Math.cos(a)*0.28,h*0.68+SR(s+i,-0.1,0.18),Math.sin(a)*0.28]);
+  }
+  addMesh(g, new THREE.IcosahedronGeometry(0.32+d.leafD*0.12,1), wm(d.pal.leaf), [0,h*0.62+0.22,0]);
+  return g;
+}
+
+function buildPlant(d, s, pi) {
+  switch(d.type) {
+    case 'flower':    return mkFlower(d,s,pi);
+    case 'umbrella':  return mkUmbrella(d,s,pi);
+    case 'sunflower': return mkSunflower(d,s,pi);
+    case 'dragon':    return mkDragon(d,s,pi);
+    case 'tropical':  return mkTropical(d,s,pi);
+    default:          return mkFlower(d,s,pi);
+  }
+}
+
+// ── Piédestaux ────────────────────────────────────────────────────────────────
+function mkPedestal(hex) {
+  const g = new THREE.Group();
+  addMesh(g, new THREE.CylinderGeometry(0.32,0.38,0.06,6),
+    new THREE.MeshLambertMaterial({color:0xd8d0c0,flatShading:true}), [0,0.03,0]);
+  for (let i=0;i<5;i++) {
+    const a=(i/5)*Math.PI*2;
+    addMesh(g, new THREE.IcosahedronGeometry(R(0.03,0.07),0),
+      new THREE.MeshLambertMaterial({color:0xc8c0b0,flatShading:true}),
+      [Math.cos(a)*R(0.2,0.38),0.03,Math.sin(a)*R(0.15,0.35)]);
+  }
+  const pl = new THREE.PointLight(hex, 0.4, 3.0); pl.position.set(0,1,0);
+  g.add(pl);
+  return g;
+}
+
+// ── Personnages animés ─────────────────────────────────────────────────────────
+// Mémorial : pas de militaires. Des OISEAUX qui planent (paix, âmes qui s'envolent)
+// + des VISITEURS en recueillement qui marchent lentement entre les plantes.
+const loader   = new GLTFLoader();
+const mixers   = [];   // tous les AnimationMixer (oiseaux + visiteurs)
+const birds    = [];   // { root, cx,cz, rx,rz, alt, speed, phase, bob, faceOff }
+const visitors = [];   // { root, walk, idle, path, t, dir, pause, state, cur }
+
+// Met à l'échelle un objet pour que sa plus grande dimension == target
+function fitMaxDim(obj, target) {
+  const sz = new THREE.Vector3();
+  new THREE.Box3().setFromObject(obj).getSize(sz);
+  const m = Math.max(sz.x, sz.y, sz.z) || 1;
+  obj.scale.multiplyScalar(target / m);
+}
+// Met à l'échelle un personnage squelettique par l'envergure verticale de son SQUELETTE.
+// (Box3.setFromObject est inutilisable sur un SkinnedMesh : bbox géométrique dégénérée.)
+// Renvoie la hauteur monde de la tête après mise à l'échelle, pour caler la robe dessus.
+function fitSkinned(root, spanTarget) {
+  const span = () => {
+    root.updateWorldMatrix(true, true);
+    let lo = Infinity, hi = -Infinity;
+    root.traverse(o => { if (o.isBone) { const y = o.matrixWorld.elements[13]; if (y < lo) lo = y; if (y > hi) hi = y; } });
+    return { lo, hi, h: hi - lo };
+  };
+  const s0 = span();
+  root.scale.multiplyScalar(spanTarget / (s0.h || 1));
+  return span().hi;   // Y de la tête (les pieds sont ~0)
+}
+
+// ── Oiseaux (animation par morph targets) ───────────────────────────────────────
+const BIRD_FILES = [
+  { file:'Stork.glb',    clip:'storkFly_B_',    color:0xc4ccd4, span:1.7, count:2, ts:0.85 }, // cigognes claires
+  { file:'Flamingo.glb', clip:'flamingo_flyA_', color:0xe6a8b2, span:1.5, count:2, ts:1.0  }, // flamants rosés
+  { file:'Parrot.glb',   clip:'parrot_A_',      color:0x7fa86a, span:1.1, count:1, ts:1.35 }, // un perroquet vert
+];
+BIRD_FILES.forEach(spec => {
+  loader.load('/plant/vendor/' + spec.file, gltf => {
+    const clip = THREE.AnimationClip.findByName(gltf.animations, spec.clip) || gltf.animations[0];
+    for (let k = 0; k < spec.count; k++) {
+      const root = gltf.scene.clone(true);          // clone() : OK pour morph targets
+      fitMaxDim(root, spec.span);
+      const mat = new THREE.MeshLambertMaterial({ color: spec.color, flatShading: true });
+      root.traverse(c => { if (c.isMesh) { c.material = mat; c.castShadow = true; } });
+
+      const mixer = new THREE.AnimationMixer(root);
+      const act = mixer.clipAction(clip);
+      act.timeScale = spec.ts;
+      act.time = Math.random() * clip.duration;     // ailes déphasées
+      act.play();
+      mixers.push(mixer);
+
+      birds.push({
+        root,
+        cx: R(-1.5, 1.5), cz: R(-1.0, 1.0),         // centre de l'orbite
+        rx: R(4.5, 7.0),  rz: R(3.5, 6.0),          // rayons (ellipse)
+        alt: R(3.2, 5.5), speed: R(0.10, 0.20) * (Math.random() < 0.5 ? 1 : -1),
+        phase: R(0, Math.PI * 2), bob: R(0.15, 0.4),
+        faceOff: Math.PI,                            // orientation par défaut du modèle
+      });
+      scene.add(root);
+    }
+  }, undefined, e => console.error(spec.file, e));
+});
+
+// ── Visiteurs (squelettique) ─────────────────────────────────────────────────────
+const VISITOR_ROBES = [0x53565e, 0x5b5247, 0x4c564f]; // capes mates : ardoise, taupe, sauge grise
+const VISITOR_PATHS = [
+  { from: new THREE.Vector2(-4.2, -3.0), to: new THREE.Vector2( 4.0,  2.2) },
+  { from: new THREE.Vector2( 3.4, -4.0), to: new THREE.Vector2(-3.2,  3.0) },
+  { from: new THREE.Vector2(-4.6,  2.4), to: new THREE.Vector2( 4.6, -2.0) },
+];
+function playAction(v, action) {                     // fondu enchaîné propre
+  if (v.cur === action) return;
+  if (v.cur) v.cur.fadeOut(0.5);
+  action.reset().fadeIn(0.5).play();
+  v.cur = action;
+}
+
+// Robe drapée à capuche (unités monde), calée sur la hauteur de tête `top` du mannequin.
+// Enveloppe corps + bras + tête ; seuls les pieds/chevilles dépassent sous l'ourlet.
+function buildRobe(color, s, top) {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshLambertMaterial({ color, flatShading: true });
+  const shoulder = top * 0.82;        // niveau des épaules
+  const hem = 0.16;                   // ourlet : laisse voir chevilles/pieds
+  // corps : robe évasée du sol aux épaules
+  const hBody = shoulder - hem;
+  const body = addMesh(g, new THREE.CylinderGeometry(0.20, 0.42, hBody, 10, 1, true), mat, [0, hem + hBody / 2, 0]);
+  body.scale.set(SR(s, 0.95, 1.08), 1, SR(s + 3, 0.96, 1.14));   // léger drapé asymétrique
+  // cape d'épaules : couvre bras et épaules
+  addMesh(g, new THREE.ConeGeometry(0.34, 0.40, 10, 1, true), mat, [0, shoulder - 0.05, 0]);
+  // coiffe : dôme enveloppant la tête, légèrement penché (tête baissée, recueillement)
+  const cowl = addMesh(g, new THREE.SphereGeometry(0.19, 10, 8), mat, [0, top + 0.02, 0.02], [0.12, 0, 0]);
+  cowl.scale.set(1.05, 1.28, 1.32);
+  return g;
+}
+
+loader.load('/plant/vendor/Xbot.glb', gltf => {
+  const clips    = gltf.animations;
+  const walkClip = THREE.AnimationClip.findByName(clips, 'walk');
+  const idleClip = THREE.AnimationClip.findByName(clips, 'sad_pose')  // pose de recueillement
+                || THREE.AnimationClip.findByName(clips, 'idle');
+  VISITOR_PATHS.forEach((path, i) => {
+    // wrapper monde : on déplace le holder, la robe reste en unités monde
+    const holder = new THREE.Group();
+    const root = skelClone(gltf.scene);
+    const headY = fitSkinned(root, 1.35);   // envergure squelette ~1.35 u (≈ 1.5 u visuel)
+    // mannequin en sombre mat : seules les chevilles/pieds dépassent sous la robe
+    const skin = new THREE.MeshLambertMaterial({ color: 0x20242a });
+    root.traverse(c => { if (c.isMesh) { c.material = skin; c.castShadow = true; c.receiveShadow = true; } });
+    holder.add(root);
+    holder.add(buildRobe(VISITOR_ROBES[i % 3], i * 41.7 + 5, headY));
+    scene.add(holder);
+
+    const mixer = new THREE.AnimationMixer(root);
+    const walk  = mixer.clipAction(walkClip); walk.timeScale = 0.5; // démarche lente, solennelle
+    const idle  = mixer.clipAction(idleClip);
+    mixers.push(mixer);
+
+    const v = { root: holder, walk, idle, path, t: R(0.1, 0.9), dir: 1, pause: 0, state: 'walk', cur: null };
+    playAction(v, walk);
+    visitors.push(v);
+  });
+}, undefined, e => console.error('Xbot.glb', e));
+
+function lerp2(a, b, t) { return new THREE.Vector2(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t); }
+
+function updateChars(t, delta) {
+  for (const m of mixers) m.update(delta);
+
+  // Oiseaux : orbites elliptiques, léger tangage + roulis dans les virages
+  for (const b of birds) {
+    const a  = t * b.speed + b.phase;
+    const a2 = a + 0.01 * Math.sign(b.speed);
+    const x  = b.cx + Math.cos(a)  * b.rx, z  = b.cz + Math.sin(a)  * b.rz;
+    const x2 = b.cx + Math.cos(a2) * b.rx, z2 = b.cz + Math.sin(a2) * b.rz;
+    b.root.position.set(x, b.alt + Math.sin(t * 0.7 + b.phase) * b.bob, z);
+    b.root.rotation.y = Math.atan2(x2 - x, z2 - z) + b.faceOff;
+    b.root.rotation.z = Math.sin(a) * 0.12;
+  }
+
+  // Visiteurs : marche lente entre les plantes, pauses de recueillement
+  for (const v of visitors) {
+    if (v.state === 'walk') {
+      v.t += v.dir * 0.028 * delta;                // ~36 s pour traverser, pas lent
+      if (v.t >= 1 || v.t <= 0) {
+        v.t = Math.max(0, Math.min(1, v.t));
+        v.state = 'pause'; v.pause = R(4.0, 8.0);
+        playAction(v, v.idle);
+      }
+      const p  = lerp2(v.path.from, v.path.to, v.t);
+      const pn = lerp2(v.path.from, v.path.to, Math.min(1, Math.max(0, v.t + v.dir * 0.01)));
+      v.root.position.set(p.x, 0, p.y);
+      v.root.rotation.y = Math.atan2(pn.x - p.x, pn.y - p.y);
+    } else {
+      v.pause -= delta;
+      if (v.pause <= 0) { v.dir *= -1; v.state = 'walk'; playAction(v, v.walk); }
+    }
+  }
+}
+
+// ── Particules légères ────────────────────────────────────────────────────────
+(function mkParticles() {
+  const N = 80, pos = new Float32Array(N*3), vel = new Float32Array(N*3);
+  for (let i=0;i<N;i++) {
+    pos[i*3]=R(-7,7); pos[i*3+1]=R(0.2,4); pos[i*3+2]=R(-7,7);
+    vel[i*3]=R(-0.001,0.001); vel[i*3+1]=R(0.0006,0.002); vel[i*3+2]=R(-0.001,0.001);
+  }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({color:0xa0b8d0,size:0.022,transparent:true,opacity:0.5,sizeAttenuation:true}));
+  scene.add(pts);
+  // Animation dans la boucle principale
+  window._particles = { pts, vel };
+})();
+
+// ── Population scène ──────────────────────────────────────────────────────────
+let instances = [];
+
+function generate() {
+  instances.forEach(({group,ped}) => { scene.remove(group); scene.remove(ped); });
+  instances = [];
+  windUniforms.length = 0;
+  const seed = Math.random() * 999;
+  PLANTS_DATA.forEach((d,i) => {
+    const p=POSITIONS[i], s=seed+i*37.1;
+    const ped = mkPedestal(parseInt(d.dotColor.replace('#',''),16));
+    ped.position.set(p.x,0,p.z); scene.add(ped);
+    const group = buildPlant(d,s,i);
+    group.position.set(p.x,0.06,p.z);
+    group.rotation.y = R(0,Math.PI*2);
+    scene.add(group);
+    instances.push({group,ped});
+  });
+}
+generate();
+document.getElementById('regen').onclick = generate;
+
+// ── Zone UI ───────────────────────────────────────────────────────────────────
+const zonesEl = document.getElementById('zones');
+PLANTS_DATA.forEach((d,i) => {
+  const div = document.createElement('div');
+  div.className='zd'; div.id=`zd${i}`;
+  div.innerHTML=`<div class="dot" style="background:${d.dotColor}"></div><span class="lbl">${d.zone}</span>`;
+  div.onclick = () => selectPlant(i);
+  zonesEl.appendChild(div);
+});
+
+function selectPlant(i) {
+  const d=PLANTS_DATA[i];
+  document.getElementById('p-name').textContent=d.name;
+  document.getElementById('p-lat').textContent=d.latin;
+  document.getElementById('p-ctry').textContent=`${d.region}  ·  ${d.fatalities.toLocaleString()} victimes`;
+  document.getElementById('bh').style.width=(d.heightF/1.4*100).toFixed(0)+'%';
+  document.getElementById('bf').style.width=(d.leafD*100).toFixed(0)+'%';
+  document.getElementById('bv').style.width=(d.health*100).toFixed(0)+'%';
+  document.getElementById('p-info').textContent=`${d.civilians?'Civils':'Combattants'}\n${d.fatalities.toLocaleString()} victimes · ${d.age} jours`;
+  document.getElementById('dna').classList.add('on');
+  document.querySelectorAll('.zd').forEach((el,j)=>el.classList.toggle('on',j===i));
+  orb.autoRotate=false;
+  tweenTarget(new THREE.Vector3(POSITIONS[i].x,0.8,POSITIONS[i].z));
+}
+
+function tweenTarget(to) {
+  const from=orb.target.clone(), t0=performance.now(), dur=700;
+  (function step(){
+    const t=Math.min((performance.now()-t0)/dur,1), e=1-Math.pow(1-t,3);
+    orb.target.lerpVectors(from,to,e);
+    if(t<1) requestAnimationFrame(step);
+  })();
+}
+
+const ray=new THREE.Raycaster(), mouse=new THREE.Vector2();
+renderer.domElement.addEventListener('click',e=>{
+  mouse.x=(e.clientX/W())*2-1; mouse.y=-(e.clientY/H())*2+1;
+  ray.setFromCamera(mouse,camera);
+  for(let i=0;i<instances.length;i++){
+    const ms=[]; instances[i].group.traverse(c=>{if(c.isMesh)ms.push(c);});
+    if(ray.intersectObjects(ms).length>0){selectPlant(i);return;}
+  }
+  orb.autoRotate=true;
+  document.getElementById('dna').classList.remove('on');
+  document.querySelectorAll('.zd').forEach(el=>el.classList.remove('on'));
+});
+
+// ── Boucle ────────────────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+let elapsed = 0;
+
+(function loop(){
+  requestAnimationFrame(loop);
+  const delta = clock.getDelta();
+  elapsed += delta;
+  const t = elapsed;
+
+  // Mise à jour uniforms vent
+  for(const u of windUniforms) u.uTime.value = t;
+
+  // Personnages : oiseaux + visiteurs (AnimationMixer + déplacement)
+  updateChars(t, delta);
+
+  // Particules
+  const { pts, vel } = window._particles;
+  const p = pts.geometry.attributes.position;
+  for(let i=0;i<p.count;i++){
+    p.setX(i, p.getX(i)+vel[i*3]  +Math.sin(t*0.28+i*0.4)*0.0006);
+    p.setY(i, p.getY(i)+vel[i*3+1]);
+    p.setZ(i, p.getZ(i)+vel[i*3+2]+Math.cos(t*0.21+i*0.3)*0.0006);
+    if(p.getY(i)>5){p.setY(i,0.1);p.setX(i,R(-6,6));p.setZ(i,R(-6,6));}
+    if(Math.abs(p.getX(i))>7.5) vel[i*3]  *=-1;
+    if(Math.abs(p.getZ(i))>7.5) vel[i*3+2]*=-1;
+  }
+  p.needsUpdate = true;
+
+  orb.update();
+  renderer.render(scene, camera);
+})();
+
+window.addEventListener('resize',()=>{
+  camera.aspect=W()/H(); camera.updateProjectionMatrix(); renderer.setSize(W(),H());
+});
+
+// Exposer pour le pipeline social-export.js
+window.__solaceScene = { camera, orb, scene, generate };
+
+document.getElementById('loading').style.opacity='0';
+setTimeout(()=>document.getElementById('loading').remove(), 900);
+</script>
+</body>
+</html>

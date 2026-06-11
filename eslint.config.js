@@ -22,6 +22,8 @@ const browserGlobals = {
 };
 
 module.exports = [
+  // Librairies tierces vendorées (non lintées, comme phaser.min.js)
+  { ignores: ['node_modules/**', 'public/phaser.min.js', 'public/plant/vendor/**', 'public/plant/utils/**'] },
   js.configs.recommended,
   {
     files: ['*.js', 'scripts/*.js'],
